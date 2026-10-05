@@ -22,8 +22,8 @@ Reassess it after the manual workflow is demonstrated.
 - [x] Document the project specification and architecture.
 - [ ] Commit the initial documentation.
 - [ ] Create and connect the GitHub repository.
-- [ ] Scaffold Next.js and NestJS.
-- [ ] Verify both applications start locally.
+- [x] Scaffold Next.js and NestJS.
+- [x] Verify both applications start locally.
 - [ ] Set up PostgreSQL and Prisma.
 
 Demonstration: both applications run locally, with a verified
@@ -91,3 +91,20 @@ At the end of each session, record:
 - What was learned.
 - Verification results.
 - The next task.
+
+### Application setup verification
+
+- Next.js with Tailwind CSS displays the LessonForge heading on port 3000.
+  The developer verified browser styling and a successful Turbopack production
+  build, including TypeScript checking and static page generation.
+- NestJS uses ESM and serves `LessonForge API` from `GET /` on port 3001.
+  Optional shell `PORT` overrides are validated before startup; environment files
+  are not loaded automatically.
+- Backend lint, TypeScript checking, build, 15 unit tests, and 1 end-to-end test
+  passed. The compiled API's default-port HTTP smoke check also passed.
+- The sandbox initially blocked the end-to-end test's local port binding with
+  `EPERM`; the test passed when rerun outside the sandbox. The API smoke check
+  also ran outside the sandbox and stopped its process after verification.
+- The repository scan found only the root `.git`, pruning `node_modules`.
+- Next task: PostgreSQL and Prisma setup. The full foundation demonstration
+  remains incomplete until a database connection is verified.
