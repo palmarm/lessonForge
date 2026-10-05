@@ -9,6 +9,8 @@ Follow:
 - docs/project-specification.md
 - docs/architecture.md
 - docs/roadmap.md
+- docs/branching-strategy.md
+
 
 Keep documentation and implementation specific to LessonForge.
 Do not introduce references or dependencies on unrelated projects.
