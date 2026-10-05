@@ -32,6 +32,7 @@ Sample materials do not imply official curriculum alignment.
 ## Technology stack
 
 - Frontend: Next.js and TypeScript
+- Styling: Tailwind CSS v4 via its PostCSS plugin
 - Backend: NestJS and TypeScript
 - Database: PostgreSQL
 - Database access and migrations: Prisma ORM
@@ -59,7 +60,67 @@ Select the project's Node.js version:
 
 The required version is recorded in `.nvmrc`.
 
-Application setup commands will be added after scaffolding.
+Each application has its own npm manifest and lockfile. From the repository root,
+install the locked dependencies (on a fresh checkout):
+
+```bash
+npm ci --prefix frontend
+npm ci --prefix backend
+```
+
+These commands install dependencies into each application's `node_modules/`.
+They do not initialize Git repositories. No database is required for the starter apps.
+
+Run the applications in separate terminals from the repository root:
+
+```bash
+npm run dev --prefix frontend
+```
+
+Next.js serves the Tailwind-styled LessonForge page at `http://localhost:3000`.
+
+```bash
+npm run start:dev --prefix backend
+```
+
+NestJS serves `GET /` at `http://localhost:3001`, returning `LessonForge API`.
+Both development commands watch for source changes; stop them with Ctrl+C.
+
+The backend defaults to port `3001`. Override it through the shell, for example:
+
+```bash
+PORT=3002 npm run start:dev --prefix backend
+```
+
+`PORT` must be a decimal integer from `1` to `65535`; invalid values stop startup.
+`backend/.env.example` documents the setting. The current backend does **not**
+automatically load `.env` files: copying the example to `.env` alone has no effect.
+
+Run frontend verification from `frontend/`:
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
+
+Run backend verification from `backend/`:
+
+```bash
+npm run lint
+./node_modules/.bin/tsc --noEmit
+npm run build
+npm test
+npm run test:e2e
+```
+
+Lint checks source without auto-fixing files. Frontend `typecheck` generates Next.js
+route types before running TypeScript, so it works before the first development
+server or build. Type checks do not emit JavaScript.
+Builds generate `.next/` for the frontend and `dist/` for the backend.
+Backend tests run once: `npm test` runs unit tests, and `test:e2e` exercises the HTTP
+endpoint. End-to-end tests require permission to bind a local port. The frontend
+build's existing Google Fonts integration requires network access on an uncached build.
 
 ## Build sequence
 
@@ -78,5 +139,8 @@ and PDF export are outside the initial MVP.
 
 ## Current status
 
-Development environment and repository initialized.
-Application scaffolding has not started.
+Next.js with Tailwind CSS and the NestJS ESM API are scaffolded.
+The developer verified frontend styling on port 3000 and its Turbopack build.
+Backend lint, type checks, build, unit tests, end-to-end tests, and a default-port
+HTTP smoke check passed. HTTP checks required execution outside the sandbox.
+PostgreSQL, Prisma, authentication, AI, and CI implementation remain for later tasks.

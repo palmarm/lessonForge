@@ -2,14 +2,15 @@
 
 ## Status
 
-Initial architecture decision.
-Applications have not yet been scaffolded.
+Application scaffolding is implemented: Next.js with Tailwind CSS and a minimal
+NestJS ESM API. The database and product workflows below describe planned work.
 
 ## 1. Technology choices
 
 | Area | Choice |
 |---|---|
 | Frontend | Next.js with TypeScript |
+| Styling | Tailwind CSS v4 via `@tailwindcss/postcss` |
 | Backend | NestJS with TypeScript |
 | Database | PostgreSQL |
 | Database access and migrations | Prisma ORM |
@@ -20,7 +21,10 @@ Applications have not yet been scaffolded.
 | Hosting | Selected at the deployment milestone |
 
 The Node.js version is recorded in the root `.nvmrc`.
-Framework and dependency versions will be recorded during scaffolding.
+The frontend uses Next.js 16.3.8 and Tailwind CSS 4.3.3. The backend installed
+NestJS 12.1.2, Nest CLI 12.0.8, and TypeScript 6.0.3; it uses ESM (`type: module`),
+NodeNext module resolution, Express, Vitest tests, and Oxlint with type-aware linting.
+Exact dependency versions are recorded in each application's npm lockfile.
 Package lock files will be committed.
 
 ## 2. Application responsibilities
@@ -32,6 +36,9 @@ Package lock files will be committed.
 - Communicate with the NestJS API.
 - Display loading, success, and error states.
 - Use Server and Client Components where appropriate.
+
+Tailwind is configured in `frontend/postcss.config.mjs` and imported in
+`frontend/src/app/globals.css`. Pages use Tailwind utility classes for styling.
 
 Frontend checks improve usability.
 They do not replace backend authorization or validation.
@@ -121,12 +128,19 @@ Start development with sample responses before paid API calls.
 
 Use Ubuntu through WSL and VS Code's WSL connection.
 
-Initially:
-- Run Next.js and NestJS directly in Ubuntu.
-- Run PostgreSQL through Docker Compose.
-- Use separate development ports for frontend and backend.
+Current setup:
 
-Configure ports and API origins explicitly during scaffolding.
+- Run Next.js and NestJS directly in Ubuntu in separate terminals.
+- Next.js defaults to port 3000; NestJS defaults to port 3001.
+- The backend validates an optional shell `PORT` override before creating the app:
+  only decimal integers from 1 to 65535 are accepted.
+- `GET /` returns `LessonForge API`; the frontend displays a minimal LessonForge heading.
+- Frontend-to-API communication and origin configuration will be added when needed.
+- PostgreSQL through Docker Compose remains a subsequent task.
+
+The backend reads `process.env.PORT`. It has no `ConfigModule`, dotenv loader, or
+Node `--env-file` startup option, so `.env` files are not loaded automatically.
+`backend/.env.example` documents the variable; set it in the shell to override it.
 Application containers will be introduced after the basic workflow works.
 
 ## 8. Configuration
@@ -138,6 +152,15 @@ Application containers will be introduced after the basic workflow works.
 - Validate required backend configuration at startup.
 
 ## 9. Verification and delivery
+
+Current scaffold verification:
+
+- Frontend browser styling and the default Turbopack production build passed,
+  as verified by the developer.
+- Backend lint, TypeScript checking, build, unit tests, and end-to-end tests passed.
+- The compiled backend returned HTTP 200 with `LessonForge API` on port 3001.
+- HTTP verification required execution outside the sandbox because local port
+  binding was denied inside it.
 
 Add checks incrementally:
 
