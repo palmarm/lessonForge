@@ -46,101 +46,48 @@ Prisma runs within the backend.
 
 ## Repository structure
 
-- frontend/ — Next.js application
-- backend/ — NestJS application and Prisma
-- docs/ — specification, architecture, and roadmap
+- `frontend/` — Next.js application
+- `backend/` — NestJS application and Prisma
+- `docs/` — setup, specification, architecture, roadmap, and verification guides
 
-## Development environment
+## Current status
 
-Development takes place in Ubuntu through WSL, using VS Code.
+Next.js with Tailwind CSS and the NestJS ESM API are scaffolded. PostgreSQL Compose
+and Prisma 7 connectivity are implemented and verified locally, including startup,
+failure paths, persistence, timeouts, and shutdown. The developer also verified
+frontend styling and its Turbopack build.
+See `docs/database-foundation-verification.md`
+for the evidence and check results. Domain schema design, authentication, lesson
+workflows, AI, and CI remain later tasks.
 
-Select the project's Node.js version:
+## Quick start
 
-    nvm use
-
-The required version is recorded in `.nvmrc`.
-
-Each application has its own npm manifest and lockfile. From the repository root,
-install the locked dependencies (on a fresh checkout):
-
-```bash
-npm ci --prefix frontend
-npm ci --prefix backend
-```
-
-These commands install dependencies into each application's `node_modules/`.
-They do not initialize Git repositories. No database is required for the starter apps.
-
-Run the applications in separate terminals from the repository root:
+From the repository root, select Node with `nvm use` and follow the
+`docs/development-setup.md` to install dependencies,
+create and fill ignored environment files, and start PostgreSQL on
+`127.0.0.1:5433`. Then run the applications in separate terminals:
 
 ```bash
 npm run dev --prefix frontend
 ```
 
-Next.js serves the Tailwind-styled LessonForge page at `http://localhost:3000`.
-
 ```bash
 npm run start:dev --prefix backend
 ```
 
-NestJS serves `GET /` at `http://localhost:3001`, returning `LessonForge API`.
-Both development commands watch for source changes; stop them with Ctrl+C.
-
-The backend defaults to port `3001`. Override it through the shell, for example:
-
-```bash
-PORT=3002 npm run start:dev --prefix backend
-```
-
-`PORT` must be a decimal integer from `1` to `65535`; invalid values stop startup.
-`backend/.env.example` documents the setting. The current backend does **not**
-automatically load `.env` files: copying the example to `.env` alone has no effect.
-
-Run frontend verification from `frontend/`:
-
-```bash
-npm run lint
-npm run typecheck
-npm run build
-```
-
-Run backend verification from `backend/`:
-
-```bash
-npm run lint
-./node_modules/.bin/tsc --noEmit
-npm run build
-npm test
-npm run test:e2e
-```
-
-Lint checks source without auto-fixing files. Frontend `typecheck` generates Next.js
-route types before running TypeScript, so it works before the first development
-server or build. Type checks do not emit JavaScript.
-Builds generate `.next/` for the frontend and `dist/` for the backend.
-Backend tests run once: `npm test` runs unit tests, and `test:e2e` exercises the HTTP
-endpoint. End-to-end tests require permission to bind a local port. The frontend
-build's existing Google Fonts integration requires network access on an uncached build.
-
-## Build sequence
-
-1. Project setup and documentation.
-2. Manual lesson creation and saving.
-3. Submission, revisions, and administrator review.
-4. AI drafting and validation.
-5. Automated checks, containerization, and deployment.
-6. Portfolio documentation and demonstration.
+Frontend: `http://localhost:3000`. API: `http://localhost:3001` (`GET /` returns
+`LessonForge API`). Stop either application with Ctrl+C.
 
 ## Deferred features
 
 Semantic search, document uploads, student accounts, multiple schools,
 and PDF export are outside the initial MVP.
 
+## Documentation
 
-## Current status
-
-Next.js with Tailwind CSS and the NestJS ESM API are scaffolded.
-The developer verified frontend styling on port 3000 and its Turbopack build.
-Backend lint, type checks, build, unit tests, end-to-end tests, and a default-port
-HTTP smoke check passed. HTTP checks required execution outside the sandbox.
-PostgreSQL, Prisma, authentication, AI, and CI implementation remain for later tasks.
+- `docs/development-setup.md` — local setup and troubleshooting.
+- `docs/project-specification.md` — product scope, workflows, and acceptance criteria.
+- `docs/architecture.md` — stack, application responsibilities, and design.
+- `docs/roadmap.md` — milestones and next tasks.
+- `docs/branching-strategy.md` — branches and pull-request workflow.
+- `docs/database-foundation-verification.md` — verification evidence.

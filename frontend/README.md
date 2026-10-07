@@ -17,6 +17,7 @@ npm run build
 `typecheck` generates Next.js route types before running TypeScript.
 The existing Google Fonts integration needs network access on an uncached build.
 
-See the [root README](../README.md) for Node.js selection, installation, backend
-commands, and project scope. Lesson workflows, authentication, and AI are deferred;
+See the [development setup guide](../docs/development-setup.md) for Node.js
+selection, installation, and backend commands, and the [root README](../README.md)
+for project scope. Lesson workflows, authentication, and AI are deferred;
 NestJS will own business rules and private integrations. Hosting and CI are deferred.

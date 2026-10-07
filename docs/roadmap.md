@@ -9,6 +9,15 @@ Carry unfinished tasks into the next session.
 The timeline is an estimate, not a fixed deadline.
 Reassess it after the manual workflow is demonstrated.
 
+## Build sequence
+
+1. Project setup and documentation.
+2. Manual lesson creation and saving.
+3. Submission, revisions, and administrator review.
+4. AI drafting and validation.
+5. Automated checks, containerization, and deployment.
+6. Portfolio documentation and demonstration.
+
 ## Milestones
 
 ### 1. Foundation
@@ -24,7 +33,10 @@ Reassess it after the manual workflow is demonstrated.
 - [ ] Create and connect the GitHub repository.
 - [x] Scaffold Next.js and NestJS.
 - [x] Verify both applications start locally.
-- [ ] Set up PostgreSQL and Prisma.
+- [x] Implement PostgreSQL Compose and Prisma 7 connectivity.
+- [x] Verify local database health, authenticated connectivity, and Ctrl+C shutdown.
+- [x] Verify incorrect-password startup, container-recreation persistence,
+  real stalled-connection/query timeout behavior, and live SIGTERM shutdown.
 
 Demonstration: both applications run locally, with a verified
 backend database connection.
@@ -87,12 +99,16 @@ Demonstration: use the application through a hosted URL.
 ## Session notes
 
 At the end of each session, record:
+
 - What was completed.
 - What was learned.
 - Verification results.
 - The next task.
 
 ### Application setup verification
+
+This records the earlier scaffold session. Current database-foundation evidence
+is in the [verification guide](database-foundation-verification.md).
 
 - Next.js with Tailwind CSS displays the LessonForge heading on port 3000.
   The developer verified browser styling and a successful Turbopack production
@@ -108,3 +124,12 @@ At the end of each session, record:
 - The repository scan found only the root `.git`, pruning `node_modules`.
 - Next task: PostgreSQL and Prisma setup. The full foundation demonstration
   remains incomplete until a database connection is verified.
+
+### Database foundation
+
+Implementation, shutdown investigation, and developer/agent verification records
+are in the [database-foundation verification guide](database-foundation-verification.md).
+All previously recorded database-foundation evidence gaps have been closed.
+Use the [development setup guide](development-setup.md) for current commands.
+Next task: select the sample subject, grade, and resources, then design the domain
+schema before creating the first migration.
