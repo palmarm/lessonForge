@@ -3,7 +3,14 @@
 ## Status
 
 Application scaffolding is implemented: Next.js with Tailwind CSS and a minimal
-NestJS ESM API. The database and product workflows below describe planned work.
+NestJS ESM API. PostgreSQL Compose and Prisma 7 connectivity are implemented.
+The developer verified local database health, live authenticated connectivity,
+development and compiled API responses, prompt Ctrl+C shutdown, and sanitized
+startup failure with exit code 1 when PostgreSQL was stopped. PostgreSQL was
+restored to healthy. The developer also verified incorrect-password startup,
+container-recreation persistence, real stalled-connection/query timeouts, and
+live SIGTERM shutdown.
+Product workflows and domain schema remain planned work.
 
 ## 1. Technology choices
 
@@ -64,7 +71,17 @@ Database access is provided through a dedicated Prisma service.
 
 PostgreSQL stores application data and enforces database constraints.
 
-Prisma provides database access and schema migration tooling.
+Prisma 7.10.0 provides database access and schema migration tooling. The current
+schema has only generator and datasource blocks. Its generated ESM client uses
+`@prisma/adapter-pg`; the adapter owns a pool of up to five connections.
+`PrismaModule` verifies the returned `SELECT 1 AS ok` result during Nest
+initialization, before HTTP listens. Connection acquisition, driver queries, and
+server statements each have five-second limits, with a separate 12-second
+initialization deadline. Failures are sanitized; failed
+initialization and SIGINT/SIGTERM shutdown disconnect the client.
+The HTTP adapter tracks and closes open sockets on shutdown, including unfinished
+requests, so server disposal cannot wait indefinitely on those connections.
+This can interrupt in-flight HTTP requests; database cleanup is still awaited.
 Only the NestJS backend connects to the database.
 
 Migration files are reviewed and committed.
@@ -136,11 +153,19 @@ Current setup:
   only decimal integers from 1 to 65535 are accepted.
 - `GET /` returns `LessonForge API`; the frontend displays a minimal LessonForge heading.
 - Frontend-to-API communication and origin configuration will be added when needed.
-- PostgreSQL through Docker Compose remains a subsequent task.
+- PostgreSQL uses root `compose.yaml`, pinned to `postgres:17.11-bookworm`,
+  published on `127.0.0.1:5433`, with a named volume and readiness health check.
+  PostgreSQL and the health check use port `5432` inside the container.
 
-The backend reads `process.env.PORT`. It has no `ConfigModule`, dotenv loader, or
-Node `--env-file` startup option, so `.env` files are not loaded automatically.
-`backend/.env.example` documents the variable; set it in the shell to override it.
+Compose loads root `.env`; backend startup and Prisma CLI load only
+`backend/.env` through Node `process.loadEnvFile`, preserving shell precedence.
+Paths resolve relative to modules in source and compiled output. Runtime requires
+a validated `DATABASE_URL` and validates optional `PORT`. Generation and schema
+validation work without credentials. Generated TypeScript is ignored under
+`backend/src/generated/prisma` and compiled within the existing Nest build.
+Ordinary tests substitute database access; explicit `test:db` accepts only
+`127.0.0.1:5433/lessonforge_dev` without query parameters and makes no writes.
+See the root README for first-start initialization and named-volume persistence.
 Application containers will be introduced after the basic workflow works.
 
 ## 8. Configuration
@@ -153,14 +178,25 @@ Application containers will be introduced after the basic workflow works.
 
 ## 9. Verification and delivery
 
-Current scaffold verification:
+Current verification evidence:
 
 - Frontend browser styling and the default Turbopack production build passed,
   as verified by the developer.
-- Backend lint, TypeScript checking, build, unit tests, and end-to-end tests passed.
-- The compiled backend returned HTTP 200 with `LessonForge API` on port 3001.
-- HTTP verification required execution outside the sandbox because local port
-  binding was denied inside it.
+- Developer checks passed: healthy PostgreSQL at `127.0.0.1:5433`, one explicit
+  live `test:db` test, development API responses, backend build, and compiled
+  production API responses. Production Ctrl+C returned promptly. Startup with
+  PostgreSQL stopped emitted a sanitized error and exited 1; PostgreSQL was
+  then restored to healthy.
+- Previously reported agent checks passed: 62 unit tests, 7 HTTP tests, lint,
+  TypeScript checking, build, formatting, and whitespace checks. Ordinary tests
+  substitute database access; HTTP tests required execution outside the sandbox
+  because local port binding was denied inside it.
+
+Additional developer checks passed: incorrect-password startup emitted a sanitized
+error and exited 1; the cluster identifier matched before and after container
+recreation, and `test:db` passed afterward. Live SIGTERM shutdown and real
+stalled-connection/query timeouts were verified. See the
+[database-foundation verification note](roadmap.md#database-foundation-verification).
 
 Add checks incrementally:
 
