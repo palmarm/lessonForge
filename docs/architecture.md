@@ -165,7 +165,8 @@ validation work without credentials. Generated TypeScript is ignored under
 `backend/src/generated/prisma` and compiled within the existing Nest build.
 Ordinary tests substitute database access; explicit `test:db` accepts only
 `127.0.0.1:5433/lessonforge_dev` without query parameters and makes no writes.
-See the root README for first-start initialization and named-volume persistence.
+See the [development setup guide](development-setup.md#docker-and-postgresql)
+for first-start initialization and named-volume persistence.
 Application containers will be introduced after the basic workflow works.
 
 ## 8. Configuration
@@ -178,25 +179,11 @@ Application containers will be introduced after the basic workflow works.
 
 ## 9. Verification and delivery
 
-Current verification evidence:
-
-- Frontend browser styling and the default Turbopack production build passed,
-  as verified by the developer.
-- Developer checks passed: healthy PostgreSQL at `127.0.0.1:5433`, one explicit
-  live `test:db` test, development API responses, backend build, and compiled
-  production API responses. Production Ctrl+C returned promptly. Startup with
-  PostgreSQL stopped emitted a sanitized error and exited 1; PostgreSQL was
-  then restored to healthy.
-- Previously reported agent checks passed: 62 unit tests, 7 HTTP tests, lint,
-  TypeScript checking, build, formatting, and whitespace checks. Ordinary tests
-  substitute database access; HTTP tests required execution outside the sandbox
-  because local port binding was denied inside it.
-
-Additional developer checks passed: incorrect-password startup emitted a sanitized
-error and exited 1; the cluster identifier matched before and after container
-recreation, and `test:db` passed afterward. Live SIGTERM shutdown and real
-stalled-connection/query timeouts were verified. See the
-[database-foundation verification note](roadmap.md#database-foundation-verification).
+The developer verified frontend browser styling and the default Turbopack
+production build. Database-foundation checks, including agent test results and
+live developer checks, are recorded in the
+[verification guide](database-foundation-verification.md). Run the documented
+checks using the [development setup guide](development-setup.md#checks).
 
 Add checks incrementally:
 

@@ -7,7 +7,7 @@ Startup and Prisma CLI explicitly load `backend/.env` with shell precedence.
 `DATABASE_URL` is required at startup; `PORT` defaults to 3001 and must be a
 whole decimal integer from 1 to 65535. Configuration errors never echo values.
 The file path works from source and compiled output, independently of the
-working directory. See the [root setup instructions](../README.md#local-database-setup)
+working directory. See the [development setup guide](../docs/development-setup.md#environment-files)
 for matching Compose and backend credentials, initialization, and persistence.
 
 From `backend/`, `npm run start:dev` generates the client and watches source.
