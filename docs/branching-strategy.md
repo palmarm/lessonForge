@@ -68,8 +68,13 @@ Both main and staging require:
 Required reviewer approvals are disabled.
 Linear history is not required because release PRs use merge commits.
 
-Required CI status checks will be enabled after workflows exist
-and their checks have run. Until then, document manual verification.
+The [CI workflow](ci.md) defines stable checks named `Frontend checks` and
+`Backend checks` for PRs targeting `staging` and `main`, pushes to those branches,
+and manual dispatch. Both checks appear without path filters.
+
+These checks are not yet configured as required by branch protection. First
+verify an actual GitHub Actions run, then configure the required checks separately.
+Until then, distinguish local verification from workflow-run evidence in PRs.
 
 ## After a task PR is merged
 

@@ -80,7 +80,8 @@ Demonstration: generate, edit, and submit a lesson draft.
 ### 5. Delivery
 
 - [ ] Containerize the applications.
-- [ ] Automate checks, tests, and builds with GitHub Actions.
+- [x] Implement checks, tests, and builds with GitHub Actions.
+- [ ] Verify the first GitHub Actions run and configure required checks separately.
 - [ ] Choose hosting.
 - [ ] Configure deployment and database migrations.
 - [ ] Add health checks and useful logs.
@@ -133,3 +134,14 @@ All previously recorded database-foundation evidence gaps have been closed.
 Use the [development setup guide](development-setup.md) for current commands.
 Next task: select the sample subject, grade, and resources, then design the domain
 schema before creating the first migration.
+
+### GitHub Actions CI
+
+- Added independent `Frontend checks` and `Backend checks` jobs for PRs targeting
+  `staging` and `main`, pushes to those branches, and manual dispatch.
+- Both jobs use Ubuntu 24.04, Node from `.nvmrc`, locked npm installation, and
+  application-specific npm download caching. Actions are pinned to verified
+  release commits. Backend checks use no database or real environment files.
+- See [CI documentation](ci.md) for commands, local validation, limitations, and
+  troubleshooting. An actual workflow run and clean-install verification remain
+  pending; required branch checks have not been configured.

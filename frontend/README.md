@@ -20,4 +20,6 @@ The existing Google Fonts integration needs network access on an uncached build.
 See the [development setup guide](../docs/development-setup.md) for Node.js
 selection, installation, and backend commands, and the [root README](../README.md)
 for project scope. Lesson workflows, authentication, and AI are deferred;
-NestJS will own business rules and private integrations. Hosting and CI are deferred.
+NestJS will own business rules and private integrations. Hosting is deferred.
+See the [CI guide](../docs/ci.md) for the implemented checks and pending workflow-run
+verification.

@@ -58,7 +58,8 @@ failure paths, persistence, timeouts, and shutdown. The developer also verified
 frontend styling and its Turbopack build.
 See `docs/database-foundation-verification.md`
 for the evidence and check results. Domain schema design, authentication, lesson
-workflows, AI, and CI remain later tasks.
+workflows and AI remain later tasks. GitHub Actions CI is implemented; an actual
+workflow run and required-check configuration remain pending. See `docs/ci.md`.
 
 ## Quick start
 
@@ -91,3 +92,4 @@ and PDF export are outside the initial MVP.
 - `docs/roadmap.md` — milestones and next tasks.
 - `docs/branching-strategy.md` — branches and pull-request workflow.
 - `docs/database-foundation-verification.md` — verification evidence.
+- `docs/ci.md` — CI coverage, commands, limitations, and troubleshooting.

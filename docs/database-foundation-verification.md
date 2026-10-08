@@ -22,8 +22,10 @@ Use the [development setup guide](development-setup.md) for commands and the
   stalled-connection/query timeout behavior were verified. These checks close the
   four previously recorded database-foundation evidence gaps.
 
-Domain schema design, authentication, lesson workflows, AI, and CI remain later
+Domain schema design, authentication, lesson workflows, and AI remain later
 milestones; the database-foundation results do not establish completion of them.
+CI is implemented separately; its workflow-run evidence remains pending in the
+[CI guide](ci.md).
 
 ## Historical records
 

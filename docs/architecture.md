@@ -185,13 +185,18 @@ live developer checks, are recorded in the
 [verification guide](database-foundation-verification.md). Run the documented
 checks using the [development setup guide](development-setup.md#checks).
 
+GitHub Actions now implements separate frontend and backend checks using Node
+from `.nvmrc` and database-free backend tests. Coverage, commands, limitations,
+and local verification are recorded in [CI documentation](ci.md). An actual
+workflow run and required-check configuration remain pending.
+
 Add checks incrementally:
 
 - Type checking and linting.
 - Backend business-rule and permission tests.
 - PostgreSQL integration tests for critical data behavior.
 - Browser tests for the main teacher and administrator workflow.
-- Build checks in GitHub Actions.
+- Verify GitHub Actions runs before configuring required branch checks.
 
 Deployment will include an explicit migration step, health checks, and useful logs without credentials or sensitive content.
 
