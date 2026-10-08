@@ -187,8 +187,14 @@ checks using the [development setup guide](development-setup.md#checks).
 
 GitHub Actions now implements separate frontend and backend checks using Node
 from `.nvmrc` and database-free backend tests. Coverage, commands, limitations,
-and local verification are recorded in [CI documentation](ci.md). An actual
-workflow run and required-check configuration remain pending.
+and historical local verification are recorded in [CI documentation](ci.md).
+The developer confirmed `Frontend checks` and `Backend checks` passed on GitHub
+and the CI PR was merged into `staging`. Saved protection rules for `staging` and
+`main` require both checks and up-to-date branches before merging; reviewer
+approval remains disabled for solo development. See the
+[branching strategy](branching-strategy.md). The successful GitHub run is separate
+from the earlier local network and port-binding restrictions recorded in the CI
+guide; it does not establish `actionlint` or a separate local clean installation.
 
 Add checks incrementally:
 
@@ -196,7 +202,6 @@ Add checks incrementally:
 - Backend business-rule and permission tests.
 - PostgreSQL integration tests for critical data behavior.
 - Browser tests for the main teacher and administrator workflow.
-- Verify GitHub Actions runs before configuring required branch checks.
 
 Deployment will include an explicit migration step, health checks, and useful logs without credentials or sensitive content.
 
