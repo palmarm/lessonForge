@@ -43,4 +43,6 @@ binding permission. `npm run test:db` is separate: it requires the local databas
 at `127.0.0.1:5433/lessonforge_dev`, rejects URL query parameters, executes only
 `SELECT 1`, and closes the client. It creates no tables or data.
 
-Domain schema design, authentication, lessons, AI, deployment, and CI are deferred.
+Domain schema design, authentication, lessons, AI, and deployment are deferred.
+See the [CI guide](../docs/ci.md) for the implemented checks and pending workflow-run
+verification.
