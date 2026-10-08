@@ -58,8 +58,11 @@ failure paths, persistence, timeouts, and shutdown. The developer also verified
 frontend styling and its Turbopack build.
 See `docs/database-foundation-verification.md`
 for the evidence and check results. Domain schema design, authentication, lesson
-workflows and AI remain later tasks. GitHub Actions CI is implemented; an actual
-workflow run and required-check configuration remain pending. See `docs/ci.md`.
+workflows and AI remain later tasks. The developer confirmed `Frontend checks`
+and `Backend checks` passed on GitHub and the CI PR was merged into `staging`.
+Saved protection rules for `staging` and `main` require both checks and up-to-date
+branches before merging; reviewer approval remains disabled for solo development.
+See `docs/ci.md` and `docs/branching-strategy.md`.
 
 ## Quick start
 

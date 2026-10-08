@@ -60,21 +60,25 @@ Merge commits preserve shared ancestry between permanent branches.
 ## Branch protection
 
 Both main and staging require:
+
 - Pull requests before merging.
+- Passing `Frontend checks` and `Backend checks`.
+- Branches to be up to date before merging.
 - Resolution of review conversations.
 - Enforcement for administrators.
 - Force pushes and branch deletion blocked.
 
-Required reviewer approvals are disabled.
+Required reviewer approvals remain disabled for solo development.
 Linear history is not required because release PRs use merge commits.
 
 The [CI workflow](ci.md) defines stable checks named `Frontend checks` and
 `Backend checks` for PRs targeting `staging` and `main`, pushes to those branches,
 and manual dispatch. Both checks appear without path filters.
 
-These checks are not yet configured as required by branch protection. First
-verify an actual GitHub Actions run, then configure the required checks separately.
-Until then, distinguish local verification from workflow-run evidence in PRs.
+The developer confirmed both checks passed on GitHub, the CI PR was merged into
+`staging`, and both protection rules now require these checks and up-to-date
+branches. See the CI guide for the earlier local verification restrictions.
+Continue to distinguish local verification from GitHub-run evidence in PRs.
 
 ## After a task PR is merged
 

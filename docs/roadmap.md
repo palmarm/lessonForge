@@ -81,7 +81,7 @@ Demonstration: generate, edit, and submit a lesson draft.
 
 - [ ] Containerize the applications.
 - [x] Implement checks, tests, and builds with GitHub Actions.
-- [ ] Verify the first GitHub Actions run and configure required checks separately.
+- [x] Verify the first GitHub Actions run and configure required checks on staging and main.
 - [ ] Choose hosting.
 - [ ] Configure deployment and database migrations.
 - [ ] Add health checks and useful logs.
@@ -142,6 +142,16 @@ schema before creating the first migration.
 - Both jobs use Ubuntu 24.04, Node from `.nvmrc`, locked npm installation, and
   application-specific npm download caching. Actions are pinned to verified
   release commits. Backend checks use no database or real environment files.
-- See [CI documentation](ci.md) for commands, local validation, limitations, and
-  troubleshooting. An actual workflow run and clean-install verification remain
-  pending; required branch checks have not been configured.
+- Initial agent verification passed frontend lint and type checking, backend
+  generation, build, lint, type checking, 62 unit tests, and 7 HTTP tests. The local
+  frontend build was blocked by network and port-binding restrictions; HTTP tests
+  passed after a retry with expanded local socket permissions. This historical
+  evidence remains in [CI documentation](ci.md).
+- The developer subsequently confirmed `Frontend checks` and `Backend checks`
+  passed on GitHub and the CI PR was merged into `staging`.
+- The developer confirmed both `staging` and `main` require those checks to pass
+  and branches to be up to date before merging. Reviewer approval remains disabled
+  for solo development.
+- `actionlint` and a separate local clean installation remain unverified. The
+  successful GitHub run is separate evidence from the earlier local restrictions.
+  See the CI guide for commands, limitations, and troubleshooting.

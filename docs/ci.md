@@ -4,7 +4,7 @@
 
 `.github/workflows/ci.yml` defines `LessonForge CI` with independent jobs named
 `Frontend checks` and `Backend checks`. Keep these names stable so they can be
-selected as required checks later.
+used by the required-check rules for `staging` and `main`.
 
 The workflow runs on pull requests targeting `staging` or `main`, pushes to either
 branch, and manual `workflow_dispatch`. It has no path filters, so documentation
@@ -87,8 +87,9 @@ domain workflows. Live database evidence remains in the
 
 Dependency installation, Node setup, Prisma engine availability, and uncached
 Google Fonts builds need network access. npm caching reduces downloads but does
-not guarantee offline execution. GitHub-hosted runner execution and clean installs
-still need an actual workflow run to establish success.
+not guarantee offline execution. The developer confirmed that both jobs passed
+on GitHub, including their `npm ci` steps. This does not establish offline support
+or a separate local clean-install verification.
 
 ## Local verification and GitHub evidence
 
@@ -108,9 +109,20 @@ existing installed dependencies, with no real `.env` files or `DATABASE_URL`:
   shell syntax, and commands against both manifests and lockfiles. Documentation
   references and whitespace were checked. `actionlint` was unavailable.
 
-These are local results, not a GitHub Actions run. Clean `npm ci` and an actual
-GitHub Actions run remain unverified. Branch protection has not been changed to
-require these checks; see the [branching strategy](branching-strategy.md).
+These historical local results are separate from the later successful GitHub
+Actions run. The local frontend build restrictions remain part of that record;
+`actionlint` and a separate local clean `npm ci` were not verified.
+
+The developer subsequently confirmed:
+
+- `Frontend checks` and `Backend checks` passed on GitHub.
+- The CI PR was merged into `staging`.
+- Both `staging` and `main` now require those checks to pass and branches to be
+  up to date before merging.
+- Required reviewer approval remains disabled for solo development.
+
+These GitHub results and protection settings are developer-confirmed, rather than
+independently inspected by the agent. See the [branching strategy](branching-strategy.md).
 
 To verify clean dependency installation yourself, run from the repository root:
 
@@ -142,7 +154,8 @@ The agent does not run dependency installation commands for this task.
 - If a check is missing, confirm the PR targets `staging` or `main`, inspect Actions
   policy/approval requirements for the repository, and verify the workflow exists
   on the relevant revision. Manual dispatch additionally needs the workflow on
-  the default branch. Required-check configuration is a separate later action.
+  the default branch. Both protected branches require the two stable checks;
+  a missing check or an out-of-date branch can block merging.
 - If action pins are rejected, verify repository/organization Actions policy
   allows the official actions and confirm the SHA against the linked release.
 
