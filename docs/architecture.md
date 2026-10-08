@@ -10,7 +10,9 @@ startup failure with exit code 1 when PostgreSQL was stopped. PostgreSQL was
 restored to healthy. The developer also verified incorrect-password startup,
 container-recreation persistence, real stalled-connection/query timeouts, and
 live SIGTERM shutdown.
-Product workflows and domain schema remain planned work.
+The [domain schema design](domain-schema.md) records the confirmed Grade 4
+Mathematics context and validation policies. Product workflows, Prisma models,
+and migrations remain pending.
 
 ## 1. Technology choices
 
@@ -119,13 +121,30 @@ Deployment must account for cookie settings, HTTPS, CSRF protection, and the rel
 ## 5. Data integrity
 
 - Submitted revisions and approved content remain immutable.
+- The MVP uses Grade 4 Mathematics with a small set of original fraction resources
+  labeled demonstration material without claiming official curriculum alignment.
+  Exact resource text can be prepared during seeding.
 - Reviews refer to the exact submitted revision.
 - Related submission and review changes execute atomically.
 - Concurrent edits and decisions must be detected or serialized.
+- Authorize the requested action before a version-conflict response returns
+  current lesson content, and include only content the caller is permitted to read.
 - Database constraints support application rules.
 - Resource changes preserve historical source information.
+- Retired resources cannot be newly selected. Existing draft selections and copies
+  of approved lessons retain trusted selection-time snapshots and remain
+  submittable. Ordinary saves never refresh snapshots; an owning teacher may
+  explicitly refresh a selected resource to its latest active version captured
+  by NestJS. A retired resource cannot be refreshed; the retained snapshot stays
+  unchanged. Submitted snapshots remain immutable.
+- Submission requires positive whole-number durations of at least one minute for
+  introduction, each activity, and assessment, summing to the positive total lesson
+  duration. The `materials` field is a required array with nonblank supplied
+  entries; an empty array means “No additional materials required.”
 
-Detailed constraints and concurrency mechanisms will be documented with the database design.
+The [domain schema design](domain-schema.md) separates proposed database constraints
+from NestJS validation and transactional concurrency rules. These mechanisms are
+documented proposals; Prisma models and migrations are not yet implemented.
 
 ## 6. AI boundary
 
