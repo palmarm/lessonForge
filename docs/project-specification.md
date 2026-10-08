@@ -9,13 +9,14 @@ AI integration, database design, testing, and deployment.
 ## 2. MVP boundaries
 
 - One fictional school.
-- One subject and one grade level.
-- Sample learning materials without claims of official curriculum alignment.
+- Grade 4 Mathematics.
+- A small set of original sample resources about fractions, clearly labeled as
+  demonstration material without claiming official curriculum alignment.
 - Teacher and administrator accounts created through a setup script.
 - No public registration or account-management screens.
 
-The subject, grade, and sample resources will be selected before
-implementing the lesson workflow.
+The subject, grade, and resource topic are confirmed. Exact resource text can be
+prepared during seeding.
 
 ## 3. Users and permissions
 
@@ -24,6 +25,8 @@ implementing the lesson workflow.
 - Browse curriculum resources.
 - Create lessons manually or generate drafts using AI.
 - Edit and save their own editable drafts.
+- Explicitly refresh a selected resource in their own editable draft to its latest
+  active version; NestJS captures the replacement snapshot.
 - Submit their own lessons for review.
 - Read feedback and create a revision when changes are requested.
 - Browse approved lessons and copy one into a new draft.
@@ -63,17 +66,26 @@ Publication means availability in the application's approved lesson library.
 - Approved revisions remain unchanged.
 - Copying an approved lesson creates a new lesson owned by the teacher making the copy and records the original lesson reference.
 - Conflicting edits or review decisions must not silently overwrite each other.
+- Authorization must succeed before a version-conflict response returns current
+  lesson content; return only content the caller is permitted to read.
 - Retiring or updating a resource must not erase the source information retained with a submitted lesson.
+- Retired resources cannot be newly selected. Existing draft selections and copies
+  of approved lessons retain their trusted selection-time snapshots and remain
+  submittable, including when resources have since changed or been retired.
+- Ordinary saves never refresh source snapshots. An explicit teacher refresh uses
+  the latest active resource version captured by NestJS; a retired resource cannot
+  be refreshed. Submitted snapshots remain immutable.
 
 ## 6. Lesson structure
 
 A submitted lesson must contain:
 
 - Title.
-- Subject and grade.
+- Subject and grade matching Mathematics and Grade 4.
 - Duration in whole minutes.
 - Learning objectives.
-- Materials.
+- Materials: a required array of nonblank entries; an empty array is valid and
+  means “No additional materials required.”
 - Introduction.
 - Activities describing teacher and learner tasks.
 - Assessment.
@@ -82,8 +94,10 @@ A submitted lesson must contain:
 
 Drafts may be incomplete while being saved.
 
-Before submission, the backend checks required fields positive lesson duration, and valid section timings.
-The introduction, activities, and assessment timings must total the lesson duration.
+Before submission, the backend checks required fields, a positive whole-number
+total lesson duration, and valid section timings. Introduction, each activity,
+and assessment require positive whole-number durations of at least one minute.
+Their sum must equal the total lesson duration.
 
 ## 7. AI drafting
 
@@ -114,7 +128,9 @@ They do not guarantee factual accuracy.
 - Lesson revisions: content, revision number, source information, and generation origin.
 - Reviews: reviewer, decision, feedback, and submitted revision reference.
 
-Detailed fields and database constraints will be designed before creating migrations.
+The proposed fields, relationships, and constraints are documented in
+[the domain schema design](domain-schema.md). Product decisions are confirmed;
+Prisma models and migrations remain pending.
 
 ## 9. Acceptance criteria
 
