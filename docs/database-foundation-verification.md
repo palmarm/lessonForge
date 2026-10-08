@@ -24,8 +24,14 @@ Use the [development setup guide](development-setup.md) for commands and the
 
 Domain schema design, authentication, lesson workflows, and AI remain later
 milestones; the database-foundation results do not establish completion of them.
-CI is implemented separately; its workflow-run evidence remains pending in the
-[CI guide](ci.md).
+CI was verified separately: the developer confirmed `Frontend checks` and
+`Backend checks` passed on GitHub and the CI PR was merged into `staging`.
+Saved protection rules for `staging` and `main` require both checks and up-to-date
+branches before merging; reviewer approval remains disabled for solo development.
+The [CI guide](ci.md) distinguishes this successful GitHub run from historical
+local network and port-binding restrictions. It does not claim `actionlint` or a
+separate local clean installation passed. The database verification records below
+remain historical evidence from their original sessions.
 
 ## Historical records
 
