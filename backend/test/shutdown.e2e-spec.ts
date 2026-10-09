@@ -17,6 +17,10 @@ vi.mock('../src/prisma/prisma.service.js', async (importOriginal) => ({
 }));
 // The production bootstrap and HTTP adapter run unchanged; ask the OS for a
 // free test port, independently of any API the developer already has running.
+// Native KDF behavior is tested separately; this fixture isolates socket/signal disposal.
+vi.mock('../src/auth/password.service.js', () => ({
+  PasswordService: class {},
+}));
 vi.mock('../src/port.js', () => ({ resolvePort: () => 0 }));
 import { startApplication } from '../src/bootstrap.js';
 

@@ -16,7 +16,9 @@ migration SQL are implemented and verified in a disposable database. On
 2026-10-09, the developer confirmed successful migration application to
 `lessonforge_dev` and up-to-date migration status, backend build and compiled
 startup, an HTTP 200 `GET /` response with body `LessonForge API`, and prompt
-Ctrl+C shutdown. Authentication, seeding, and workflow services remain pending; see
+Ctrl+C shutdown. Backend authentication is now implemented separately; the Session
+migration still needs developer application. Account provisioning, frontend
+sign-in, seeding, and workflow services remain pending; see
 [domain verification](domain-schema-verification.md).
 
 ## 1. Technology choices
@@ -80,8 +82,8 @@ PostgreSQL stores application data and enforces database constraints.
 
 Prisma 7.10.0 provides database access and schema migration tooling. The current
 schema contains User, CurriculumResource, Lesson, LessonRevision, Review, and
-RevisionSource with JSONB content and reviewed migration checks/triggers. Its
-generated ESM client uses
+RevisionSource with JSONB content and reviewed migration checks/triggers. Session
+is an additional operational model for authentication. The generated ESM client uses
 `@prisma/adapter-pg`; the adapter owns a pool of up to five connections.
 `PrismaModule` verifies the returned `SELECT 1 AS ok` result during Nest
 initialization, before HTTP listens. Connection acquisition, driver queries, and
@@ -118,8 +120,22 @@ Any server-side forwarding or rendering must preserve the user's authenticated c
 
 Authentication is owned by NestJS.
 
-The intended approach is server-side sessions with an HttpOnly cookie.
-Session storage and implementation details will be selected before building authentication.
+PostgreSQL-backed opaque sessions store only a SHA-256 token hash. NestJS
+implements login/me/logout, Argon2id verification, default authentication and
+teacher/admin role guards. Session row locks precede fresh PostgreSQL time checks;
+eight-hour absolute and 30-minute idle expiry apply, activity is monotonic, and
+logout revokes the presented session only. Valid authentication commits activity
+before later authorization, including a 403. Public login/logout retain CSRF and
+rate limits. Cleanup is an explicit bounded CLI, never an automatic startup task.
+
+The shared HTTP setup enforces exact configured origins and a custom CSRF header
+on unsafe JSON requests. Cookies are HttpOnly, host-only, SameSite=Lax; local HTTP
+is loopback-only and production requires Secure `__Host-` cookies over HTTPS.
+Limiter storage is bounded and process-local; production still needs shared/edge
+limits, trusted ingress, same-site origins, and a cleanup scheduler. Account
+provisioning, frontend sign-in, and transaction-time ownership/workflow enforcement
+remain pending. See [design](authentication-design.md) and
+[verification](authentication-verification.md).
 
 Protected operations require backend role and ownership checks.
 

@@ -61,7 +61,9 @@ for the evidence and check results. Six domain models and the initial migration
 are implemented and tested in a disposable database. On 2026-10-09, the developer
 confirmed migration application to `lessonforge_dev`, up-to-date migration status,
 a successful backend build and compiled API response, and prompt Ctrl+C shutdown.
-Authentication, seeding, lesson workflows, and AI remain pending. See
+Backend session authentication and role guards are implemented with an additive
+Session migration; developer application of that migration, account provisioning,
+frontend sign-in, seeding, lesson workflows, and AI remain pending. See
 `docs/domain-schema.md` and `docs/domain-schema-verification.md`.
 The developer confirmed `Frontend checks`
 and `Backend checks` passed on GitHub and the CI PR was merged into `staging`.
@@ -103,3 +105,5 @@ and PDF export are outside the initial MVP.
 - `docs/ci.md` — CI coverage, commands, limitations, and troubleshooting.
 - `docs/domain-schema.md` — domain storage design and confirmed product decisions.
 - `docs/domain-schema-verification.md` — initial migration and constraint-test evidence.
+- `docs/authentication-design.md` — session design and remaining provisioning/login steps.
+- `docs/authentication-verification.md` — backend authentication checks and remaining gaps.

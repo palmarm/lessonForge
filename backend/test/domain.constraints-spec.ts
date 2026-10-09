@@ -181,7 +181,7 @@ it('applies the tracked migration and inserts valid relations through the genera
   const migrations = await client().$queryRaw<{ count: bigint }[]>`
     SELECT count(*) AS count FROM "_prisma_migrations" WHERE finished_at IS NOT NULL
   `;
-  expect(migrations[0].count).toBe(1n);
+  expect(migrations[0].count).toBe(2n);
   const lesson = await client().lesson.findUniqueOrThrow({
     where: { id: ids.lesson },
     include: { currentRevision: { include: { sources: true, review: true } } },
@@ -521,6 +521,7 @@ async function databaseSnapshot() {
     'LessonRevision',
     'Review',
     'RevisionSource',
+    'Session',
     '_prisma_migrations',
   ]) {
     rows[table] = await client().$queryRawUnsafe(
