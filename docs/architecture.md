@@ -11,8 +11,10 @@ restored to healthy. The developer also verified incorrect-password startup,
 container-recreation persistence, real stalled-connection/query timeouts, and
 live SIGTERM shutdown.
 The [domain schema design](domain-schema.md) records the confirmed Grade 4
-Mathematics context and validation policies. Product workflows, Prisma models,
-and migrations remain pending.
+Mathematics context and validation policies. The six domain models and initial
+migration SQL are implemented and verified in a disposable database. Application
+to `lessonforge_dev`, authentication, and product workflows remain pending; see
+[domain verification](domain-schema-verification.md).
 
 ## 1. Technology choices
 
@@ -74,7 +76,9 @@ Database access is provided through a dedicated Prisma service.
 PostgreSQL stores application data and enforces database constraints.
 
 Prisma 7.10.0 provides database access and schema migration tooling. The current
-schema has only generator and datasource blocks. Its generated ESM client uses
+schema contains User, CurriculumResource, Lesson, LessonRevision, Review, and
+RevisionSource with JSONB content and reviewed migration checks/triggers. Its
+generated ESM client uses
 `@prisma/adapter-pg`; the adapter owns a pool of up to five connections.
 `PrismaModule` verifies the returned `SELECT 1 AS ok` result during Nest
 initialization, before HTTP listens. Connection acquisition, driver queries, and
@@ -144,7 +148,11 @@ Deployment must account for cookie settings, HTTPS, CSRF protection, and the rel
 
 The [domain schema design](domain-schema.md) separates proposed database constraints
 from NestJS validation and transactional concurrency rules. These mechanisms are
-documented proposals; Prisma models and migrations are not yet implemented.
+implemented in models and initial migration SQL where applicable. Authorization,
+content/timing validation, lifecycle transitions, trusted snapshot handling,
+latest-revision checks, and concurrency transactions still need NestJS services.
+Immutable-row triggers do not prevent a later source-row INSERT; finalized source
+sets remain a backend responsibility. See [domain verification](domain-schema-verification.md).
 
 ## 6. AI boundary
 

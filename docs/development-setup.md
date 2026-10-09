@@ -91,18 +91,21 @@ Subsequent starts reuse the volume. Changing root `.env` after initialization
 does not rename an existing database or change its stored password. Restarting or
 recreating the container, and ordinary `docker compose down`, preserve the volume.
 Do not delete volumes or reset the database to resolve credential mismatches.
-There are no initialization scripts, business tables, or migrations in this task.
+There are no initialization or account-seeding scripts. The initial domain
+migration is tracked but is not applied automatically by Compose or API startup.
 
 ## Prisma generation
 
-Prisma 7.10.0 uses `@prisma/adapter-pg` and its `pg` driver. The model-free schema
-supports raw queries. Generation writes ignored TypeScript under
+Prisma 7.10.0 uses `@prisma/adapter-pg` and its `pg` driver. The schema contains the
+six entities in the [domain design](domain-schema.md) and supports raw queries.
+Generation writes ignored TypeScript under
 `backend/src/generated/prisma`, using ESM `.js` imports; Nest compiles it into
 `dist/generated/prisma`. Build and development startup generate the client first.
 Generation and schema validation work without database credentials or connectivity.
-No migration or schema-push command is part of setup yet.
+Generation does not apply the tracked migration. Do not use `db push` as a
+substitute: custom checks and triggers are maintained in migration SQL.
 
-From the repository root, validate the model-free schema and generate the client:
+From the repository root, validate the schema and generate the client:
 
 ```bash
 npm run prisma:validate --prefix backend
@@ -111,6 +114,106 @@ npm run prisma:generate --prefix backend
 
 These commands validate the schema and regenerate ignored client source. They
 create no database tables and do not apply migrations.
+
+## Initial migration and isolated constraint verification
+
+The migration is `backend/prisma/migrations/20261008000000_initial_domain/migration.sql`.
+It creates all six tables and indexes before adding FKs, including the circular
+lesson/current-revision relationship. A lesson starts with a null current pointer;
+insert its revision and set the pointer in one transaction. The SQL also contains
+reviewed checks and history/lesson-identity triggers that Prisma cannot express.
+See [domain verification](domain-schema-verification.md) for actual results and
+the remaining NestJS responsibilities.
+
+The initial SQL was generated without a database or shadow database. To reproduce
+the generated portion from `backend/` in a checkout without real `.env` files:
+
+```bash
+./node_modules/.bin/prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script --output /tmp/lessonforge-generated-domain.sql --config prisma.config.ts
+```
+
+This writes SQL to a temporary file only; it does not apply it. The generated
+portion excludes custom checks, triggers, and the reviewed transaction wrapper.
+Do not overwrite the tracked migration with this output or edit an already-applied
+migration. Future schema changes need new reviewed migrations.
+
+`test:constraints` is a separate, mutating live command. It never reads `.env` or
+uses `DATABASE_URL`. Its dedicated Prisma config requires
+`CONSTRAINT_TEST_DATABASE_URL`, `LESSONFORGE_CONSTRAINT_TEST=disposable`, and exactly
+`lessonforge_constraints@127.0.0.1:5434/lessonforge_constraints_test` with a password
+and no query parameters. It checks actual database/user identity and refuses a
+nonempty public schema before `migrate deploy`. It never resets, drops, truncates,
+or clears a database. Repeat runs require a newly created disposable container.
+The existing read-only `test:db` target and safety checks are unchanged.
+
+From the repository root, create a separate test container using the already
+available PostgreSQL image:
+
+```bash
+docker run --detach --rm --pull=never --name lessonforge-constraints-test \
+  --publish 127.0.0.1:5434:5432 --tmpfs /var/lib/postgresql/data \
+  --env POSTGRES_DB=lessonforge_constraints_test \
+  --env POSTGRES_USER=lessonforge_constraints \
+  --env POSTGRES_PASSWORD=constraint_fixture_only \
+  --health-cmd 'pg_isready -U lessonforge_constraints -d lessonforge_constraints_test' \
+  --health-interval 1s --health-timeout 3s --health-retries 30 \
+  postgres:17.11-bookworm
+docker inspect --format '{{.State.Health.Status}}' lessonforge-constraints-test
+```
+
+This container binds only localhost port 5434 and stores its cluster in temporary
+memory-backed storage, with no development volume attached. The password shown
+is a disposable local fixture, not an application credential. `--pull=never`
+prevents implicit image download. Wait until the health command reports `healthy`;
+repeat only the inspect command while it is starting. A name or port collision
+is a failure to resolve, not a reason to stop another container.
+
+Then generate/build and run the isolated tests:
+
+```bash
+npm run build --prefix backend
+CONSTRAINT_TEST_DATABASE_URL='postgresql://lessonforge_constraints:constraint_fixture_only@127.0.0.1:5434/lessonforge_constraints_test' \
+  LESSONFORGE_CONSTRAINT_TEST=disposable npm run test:constraints --prefix backend
+```
+
+Build regenerates the ignored client and compiled API without applying migrations.
+The test command applies tracked migrations and inserts fixture rows only in the
+disposable database, then checks PostgreSQL SQLSTATEs for invalid mutations.
+Some deliberately incomplete fixture content proves database shape enforcement,
+not full lesson validation. It also proves a later source INSERT is allowed:
+immutable-row triggers do not enforce finalized source-set membership.
+
+The suite also checks referenced-key updates using SQLSTATE `23503` and the exact
+FK name, then verifies all stored rows and original references remain unchanged.
+It reuses the real preflight gate to reject its populated disposable database and
+a mismatched live role without running initialization or changing stored data.
+The identity test uses `SET LOCAL ROLE pg_read_all_data` within one transaction
+on the same guarded connection; the documented test-container user is a superuser
+and may assume this built-in role. No additional role or database is created.
+
+After verification, dispose of only the container created above:
+
+```bash
+docker stop lessonforge-constraints-test
+```
+
+Because it uses `--rm` and temporary storage, this removes its container and
+disposable data. It does not affect Compose, `lessonforge_dev`, or its named volume.
+Ordinary unit/HTTP tests and CI never run this procedure.
+
+Applying the migration to the development database remains a separate manual
+step, not performed by this task. When you choose to change that database's schema,
+review the SQL and configured target first, then from the repository root run:
+
+```bash
+./backend/node_modules/.bin/prisma migrate deploy --config backend/prisma.config.ts
+```
+
+Unlike generation, this loads the normal backend configuration and changes the
+configured database by creating domain tables, enums, constraints, and triggers.
+It does not create sample accounts or resources. Do not run it during disposable
+verification, substitute a reset, or point the isolated test at the development
+database. No development-database application is claimed in the evidence.
 
 ## Application startup
 
@@ -229,6 +332,10 @@ database cleanup is still awaited.
   volumes to resolve mismatches.
 - If `test:db` rejects its target, use `127.0.0.1:5433/lessonforge_dev` with no URL
   query parameters. Its local-only restrictions are intentional.
+- If `test:constraints` rejects its target or preflight, use the dedicated port,
+  database/user, acknowledgement, and fresh disposable container above. Do not
+  weaken its guard or reset an existing database. Local socket restrictions can
+  block it; rerun where sockets are allowed rather than mocking enforcement.
 - If generated Prisma imports are missing, run
   `npm run prisma:generate --prefix backend`; build and development startup also
   generate the client automatically.

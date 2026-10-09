@@ -1,13 +1,17 @@
-# LessonForge initial domain schema proposal
+# LessonForge initial domain schema
 
 ## Scope and authority
 
-This is a proposed design, not an implemented schema or migration. The
+The six Prisma models and initial migration SQL now implement this storage design.
+The migration was generated offline and tested only in a disposable database;
+it has not been applied to `lessonforge_dev`. Workflow services remain pending. The
 [project specification](project-specification.md) is authoritative, particularly
 sections 2–8. The [architecture](architecture.md) assigns authorization,
 validation, and transactions to NestJS. The [roadmap](roadmap.md) places the manual
 workflow before AI integration. The existing `backend/prisma/schema.prisma`
-contains only a generator and datasource; this document does not change it.
+contains the entities below with its existing generator/runtime configuration.
+See [verification evidence](domain-schema-verification.md) and the
+[migration procedure](development-setup.md#initial-migration-and-isolated-constraint-verification).
 
 Use five domain entities from the specification plus one supporting source-reference
 table: `User`, `CurriculumResource`, `Lesson`, `LessonRevision`, `Review`, and
@@ -24,7 +28,8 @@ and administrators. Do not add school tenancy, registration, uploads, student
 accounts, search infrastructure, PDF export, or AI-provider tables. Session storage
 belongs to the later authentication implementation, as already noted in the
 architecture. Product decisions recorded below are confirmed; the storage and
-transaction design remains a proposal with models and migrations pending.
+transaction design describes future NestJS services; models and migration SQL
+are implemented, while development-database application remains pending.
 
 ## Entities and relationships
 
@@ -277,7 +282,7 @@ copying does not transfer approval.
 
 ## Keys, constraints, indexes, and deletion
 
-| Area | Proposed database enforcement |
+| Area | Database enforcement in the initial migration |
 |---|---|
 | Identity | UUID primary keys on the five domain tables; composite PK `(revisionId, resourceId)` on `RevisionSource`. Unique normalized `User.email`, with a check that stored email is lowercase and trimmed. |
 | Relationships | Required FKs for owner, revision parent, reviewer, review target, and submitted source resource. Optional FK for copy source. |
@@ -285,7 +290,7 @@ copying does not transfer approval.
 | Numbering and decisions | Unique `(lessonId, number)`; unique `Review.revisionId`. Positive revision/resource/lesson counters. |
 | Basic shape | JSON columns must contain objects. Draft content and draft origin are either both present or both null. Review decision and roles/origins use constrained enum values. |
 | Feedback | A `REQUEST_CHANGES` review requires `feedback IS NOT NULL` and nonblank trimmed text. Null approval feedback is allowed; normalize empty optional approval feedback to null. |
-| Immutable records | Proposed PostgreSQL triggers reject updates/deletes of `LessonRevision`, `RevisionSource`, and `Review` rows, including their identifiers, parents, and metadata. These protect existing rows; NestJS must also prohibit adding source rows to an already submitted revision. |
+| Immutable records | PostgreSQL triggers reject updates/deletes of `LessonRevision`, `RevisionSource`, and `Review` rows, including their identifiers, parents, and metadata. These protect existing rows; NestJS must also prohibit adding source rows to an already submitted revision. |
 | Deletion | Use `ON DELETE RESTRICT` for all FKs; no history-erasing cascades or nulling ownership/provenance pointers. No application hard-delete endpoints for users, resources, lessons, revisions, or reviews. Retire resources. |
 
 The composite current-pointer relation creates a circular relationship. Create a
@@ -299,8 +304,8 @@ minimum of one `RevisionSource` through an ordinary row check. Backend transacti
 must enforce both. FK restrictions protect referenced records, not every
 unreferenced row from direct deletion; absence of application deletion paths and
 controlled database access are still necessary. Protect ownership and copy-source
-fields as write-once in NestJS; add a narrow trigger preventing later changes to
-these fields in the initial migration as database defense.
+fields as write-once in future NestJS services; the initial migration includes a
+narrow trigger preventing later changes to these fields as database defense.
 
 Start with these indexes beyond PKs/unique constraints:
 
@@ -316,9 +321,14 @@ or `APPROVE` respectively. With the agreed sample dataset, do not add search,
 JSON-field, or speculative status indexes. Add resource/list sorting indexes only
 if real queries justify them.
 
-Some checks and immutability triggers will need reviewed SQL in migrations in
-addition to Prisma's models. This document proposes their behavior, not runnable
-DDL. No migrations are created here.
+Checks and triggers are implemented as reviewed SQL in the initial migration,
+in addition to Prisma's models. UUID defaults and `updatedAt` maintenance are
+Prisma-client behavior, not database UUID defaults or timestamp-update triggers;
+direct SQL must supply identifiers and required update timestamps. SQL checks
+use PostgreSQL whitespace matching for email edges and change-request feedback;
+full identity/content normalization remains a NestJS responsibility. Privileged
+DDL, trigger disabling, or `TRUNCATE` can bypass row-level protections; application
+services must not expose these operations, and deployment roles remain future work.
 
 ## NestJS transactions and concurrency
 
@@ -402,8 +412,8 @@ These decisions are developer-confirmed product policy, not open questions.
 The four original product questions are resolved. No blocking product question
 remains for this initial design. Exact resource text is seed preparation work;
 session storage, password hashing, payload bounds, and final migration SQL remain
-implementation choices for their respective tasks. Prisma models and migrations
-are still pending.
+implementation choices for their respective tasks. Prisma models and the initial
+migration SQL are implemented; applying them to the development database is pending.
 
 ### Implementation choices recommended without a new product feature
 
@@ -432,9 +442,10 @@ and design first. None is assumed here or needed for the documented MVP.
 1. Review the proposed implementation choices against the confirmed Grade 4
    Mathematics context and prepare the original fraction demonstration resources
    during seeding. Keep the AI milestone deferred.
-2. Translate entities, enums, relations, indexes, and proposed SQL constraints into
-   Prisma models and a reviewed initial migration. Add real database constraint
-   tests when implementing the migration; ordinary CI tests remain database-free.
+2. Completed: translate entities, enums, relations, indexes, and SQL protections
+   into models and a reviewed initial migration, with real disposable-database
+   constraint tests. Development-database application is a separate pending step;
+   ordinary CI tests remain database-free.
 3. Implement setup-created users, password authentication/session handling, and
    backend role/ownership checks. Seed sample resources without production secrets.
 4. Implement administrator resource management and teacher draft creation, save,
@@ -447,8 +458,9 @@ and design first. None is assumed here or needed for the documented MVP.
 7. Add AI drafting only at its roadmap milestone, reusing draft validation,
    provenance, and version guards; never grant it approval/publication authority.
 
-This design does not mark the roadmap's combined schema-and-migration item as
-completed: neither models nor a migration have been implemented or database-tested.
+Storage implementation and disposable migration verification are recorded in
+the [verification guide](domain-schema-verification.md). These results do not
+establish implementation of authentication, lesson APIs, or lifecycle transactions.
 
 ## Acceptance examples for implementation
 
@@ -472,9 +484,10 @@ completed: neither models nor a migration have been implemented or database-test
 | Owner explicitly refreshes a selected active resource | NestJS captures its latest active snapshot in a version-checked transaction; other selections, submitted revisions, and copy-source provenance remain unchanged. |
 | Owner refreshes a retired resource, or submits a stale lesson version for refresh | Refresh is rejected or conflicts respectively; saved selections remain unchanged. Authorization precedes any current-content conflict payload. |
 | Resource text changes or resource is retired after submission | Earlier submitted source reference and full snapshot remain immutable, including after later draft refreshes or resubmission. |
-| Transaction fails during submission or a direct SQL mutation targets immutable history | Failed transaction leaves draft/version/history unchanged; proposed database triggers reject updates/deletes of submitted rows. Tests must separately check no backend path adds sources after submission. |
+| Transaction fails during submission or a direct SQL mutation targets immutable history | Future submission transactions must leave draft/version/history unchanged on failure; database triggers reject updates/deletes of submitted rows. Tests must separately check no backend path adds sources after submission. |
 | Future AI adoption finishes after the teacher saves newer work, or generation fails | Version conflict or failure preserves saved work. AI-assisted content remains editable and still requires teacher submission and administrator review. |
 
-Verification for this task is documentation review and reference/whitespace checks.
-The ER diagram, constraints, transactions, and acceptance cases are proposals;
-no Prisma generation, migration, database access, or application tests are implied.
+The initial design was a documentation-only task. Subsequent model/migration
+verification is recorded separately, including real PostgreSQL constraint tests.
+The lifecycle, authorization, full lesson-content, and AI acceptance examples
+still describe future service behavior, not completed application features.
