@@ -207,7 +207,9 @@ date!” Backend build and compiled startup succeeded, `GET /` returned HTTP 200
 with body `LessonForge API`, and Ctrl+C returned promptly to the shell. See
 [verification evidence](domain-schema-verification.md) for the developer run and
 the historical agent checks, which did not access the development database.
-Authentication, seeding, and workflow services remain pending.
+That developer run predates the additive Session migration. Backend authentication
+is now implemented; applying Session storage to development, account provisioning,
+frontend sign-in, seeding, and workflow services remain pending.
 
 Applying tracked migrations is still a separate manual step for a newly
 initialized development database; Compose and API startup do not apply them.
@@ -218,11 +220,87 @@ Review the SQL and configured target first, then from the repository root run:
 ```
 
 Unlike generation, this loads the normal backend configuration and changes the
-configured database by creating domain tables, enums, constraints, and triggers.
+configured database by applying unapplied tracked migrations. With the initial
+migration already applied, this adds Session storage, its indexes, checks, and FK;
+on a fresh database it also creates the domain tables, enums, checks, and triggers.
 It does not create sample accounts or resources. Do not run it during disposable
 verification, substitute a reset, or point the isolated test at the development
 database. The developer's completed application is separate from isolated
 constraint verification.
+
+## Backend authentication (step 1)
+
+The backend exposes `POST /auth/login`, `GET /auth/me`, and `POST /auth/logout`.
+Other routes require authentication unless explicitly public; `GET /` stays public.
+The new `20261009000000_add_sessions` migration must be reviewed/applied with the
+manual migration command above before using sessions. No account is created by
+migration, build, or startup. The explicit account-provisioning command and
+frontend login are later steps and are not available yet.
+
+Existing ignored backend environment files are not automatically rewritten. Add
+these nonsecret settings yourself if needed (they are also the local defaults):
+
+```dotenv
+API_PUBLIC_ORIGIN=http://localhost:3001
+AUTH_ALLOWED_ORIGINS=http://localhost:3000
+AUTH_COOKIE_MODE=local-http
+```
+
+Origins must be exact, without paths/trailing slashes; a comma-separated UI
+allowlist is accepted. Local HTTP requires loopback origins with the same hostname.
+If changing browser ports, update these origins too. PostgreSQL remains independently
+at `127.0.0.1:5433`. With `NODE_ENV=production`, supply explicit HTTPS origins and
+`AUTH_COOKIE_MODE=https`; compiled local startup alone does not select production
+transport. HTTPS UI/API must use a controlled same-site domain. See
+[authentication design](authentication-design.md) for cookie/proxy/limiter deployment
+prerequisites and pending interface/provisioning steps.
+
+Browser requests must include credentials. Unsafe requests (including public
+login/logout) require an allowed `Origin`, `Content-Type: application/json`, and
+`X-LessonForge-CSRF: 1`. Login takes exactly email/password; logout takes `{}`.
+`GET /auth/me` without a session returns generic 401. Accounts use existing
+canonical email, Argon2id hashes, and teacher/admin roles; no public registration
+or fixture-account seeding is provided.
+
+After build and migration, explicit maintenance is available:
+
+```bash
+npm run sessions:cleanup --prefix backend
+```
+
+This loads normal backend configuration and **deletes invalid Session rows only**,
+up to 1,000 per batch, ten batches/10,000 deletions per invocation. It preserves
+users/domain history and active sessions, skips locked rows, and disconnects on
+success/failure. Expired sessions are denied without this command. Run manually
+locally; production needs a separately configured hourly scheduler.
+
+### Disposable authentication tests
+
+`test:auth:db` is separate from ordinary tests and CI. It uses the same dedicated
+URL/acknowledgement and live identity/empty-schema gates as `test:constraints`,
+never loads real `.env` or falls back to `DATABASE_URL`, and never resets a target.
+Each suite requires a **fresh container**, even when using the same image/port.
+Run the disposable-container procedure above, substituting
+`lessonforge-auth-test` for the container name in both run/inspect/stop commands.
+After health is confirmed and client generation/build is complete, run:
+
+```bash
+CONSTRAINT_TEST_DATABASE_URL='postgresql://lessonforge_constraints:constraint_fixture_only@127.0.0.1:5434/lessonforge_constraints_test' \
+  LESSONFORGE_CONSTRAINT_TEST=disposable npm run test:auth:db --prefix backend
+```
+
+This applies the full migration chain and inserts only disposable fixture accounts,
+sessions, and domain history. It exercises real Argon2/HTTP authentication,
+PostgreSQL constraints, post-lock expiry, transactional rotation/rollback,
+revocation races/replay, monotonic activity, and bounded cleanup. Some tests
+coordinate transactions or substitute a controlled database timestamp/token hash;
+those are distinguished from the real-time lock-wait cases in
+[authentication verification](authentication-verification.md). An overlapping
+activity check is temporarily removed **inside a rolled-back disposable
+transaction** to prove the expiry check itself, then restoration is asserted.
+Stop only `lessonforge-auth-test` afterward; a new `test:constraints` run needs
+another fresh container. Never reuse a populated target or stop Compose to free
+its port. No authentication test contacts `lessonforge_dev`.
 
 ## Application startup
 

@@ -5,8 +5,10 @@
 The six Prisma models and initial migration SQL now implement this storage design.
 The implementation agent generated the migration offline and tested it only in
 a disposable database. On 2026-10-09, the developer confirmed successful application
-to `lessonforge_dev` and up-to-date migration status. Authentication, seeding, and
-workflow services remain pending. The
+to `lessonforge_dev` and up-to-date migration status. Backend authentication
+is implemented separately in [authentication design](authentication-design.md);
+Session migration application to development, provisioning, frontend sign-in,
+seeding, and workflow services remain pending. The
 [project specification](project-specification.md) is authoritative, particularly
 sections 2–8. The [architecture](architecture.md) assigns authorization,
 validation, and transactions to NestJS. The [roadmap](roadmap.md) places the manual
@@ -28,8 +30,8 @@ demonstration material without claiming official curriculum alignment; exact
 resource text can be prepared during seeding. Accounts are setup-created teachers
 and administrators. Do not add school tenancy, registration, uploads, student
 accounts, search infrastructure, PDF export, or AI-provider tables. Session storage
-belongs to the later authentication implementation, as already noted in the
-architecture. Product decisions recorded below are confirmed; the storage and
+is implemented separately by the additive authentication migration, as noted in
+the architecture. Product decisions recorded below are confirmed; the storage and
 transaction design describes future NestJS services; models and migration SQL
 are implemented and the developer has verified development-database application.
 
@@ -413,15 +415,16 @@ version check before adoption; failure leaves saved work intact.
 These decisions are developer-confirmed product policy, not open questions.
 The four original product questions are resolved. No blocking product question
 remains for this initial design. Exact resource text is seed preparation work;
-session storage, password hashing, and payload bounds remain implementation
-choices for their respective tasks. Prisma models and the reviewed initial
+session storage, password hashing, and authentication payload bounds are now
+resolved in [authentication design](authentication-design.md). Lesson payload bounds
+remain choices for the workflow services. Prisma models and the reviewed initial
 migration SQL are implemented; the developer confirmed application to the
 development database on 2026-10-09. Future schema changes require new migrations.
 
 ### Implementation choices recommended without a new product feature
 
 - One role per seeded account; canonical email login and password hashes. This
-  stays small while the session-storage mechanism remains an authentication task.
+  stays small with the separately implemented opaque-session authentication.
 - JSONB for whole lesson content, integer minutes, plain text, and arrays for
   ordered activities/objectives/materials. Normalize identity, history, decisions,
   and submitted resource references where relationships need FKs.
@@ -449,8 +452,9 @@ and design first. None is assumed here or needed for the documented MVP.
    into models and a reviewed initial migration, with real disposable-database
    constraint tests. The developer also verified development-database application
    on 2026-10-09; ordinary CI tests remain database-free.
-3. Implement setup-created users, password authentication/session handling, and
-   backend role/ownership checks. Seed sample resources without production secrets.
+3. Backend password/session authentication and role guards are implemented.
+   Account provisioning, frontend sign-in, and transaction-time ownership checks
+   remain pending. Seed sample resources without production secrets.
 4. Implement administrator resource management and teacher draft creation, save,
    source selection, explicit refresh, retirement rules, and conflict handling.
    Test incomplete drafts and unauthorized access before adding submission.
@@ -463,7 +467,9 @@ and design first. None is assumed here or needed for the documented MVP.
 
 Storage implementation and disposable migration verification are recorded in
 the [verification guide](domain-schema-verification.md). These results do not
-establish implementation of authentication, lesson APIs, or lifecycle transactions.
+establish authentication by themselves; separate
+[authentication verification](authentication-verification.md) records that work.
+Lesson APIs and lifecycle transactions remain pending.
 
 ## Acceptance examples for implementation
 
