@@ -12,8 +12,8 @@ for matching Compose and backend credentials, initialization, and persistence.
 
 From `backend/`, `npm run start:dev` generates the client and watches source.
 `npm run build` generates and compiles it; `npm run start:prod` runs `dist/main.js`.
-Only generator and datasource blocks exist in `prisma/schema.prisma`; there are
-no domain or placeholder models. Generated source is ignored and excluded from
+The schema contains the six [domain models](../docs/domain-schema.md). Generated
+source is ignored and excluded from
 formatting and authored-code linting. No migrations are needed for `SELECT 1`.
 
 `PrismaModule` creates a singleton service with an adapter-owned pool. Startup
@@ -43,6 +43,12 @@ binding permission. `npm run test:db` is separate: it requires the local databas
 at `127.0.0.1:5433/lessonforge_dev`, rejects URL query parameters, executes only
 `SELECT 1`, and closes the client. It creates no tables or data.
 
-Domain schema design, authentication, lessons, AI, and deployment are deferred.
-See the [CI guide](../docs/ci.md) for the implemented checks and pending workflow-run
-verification.
+`npm run test:constraints` applies migrations and tests real PostgreSQL enforcement
+only against an acknowledged, empty disposable database on port 5434. It never
+loads `.env` or falls back to `DATABASE_URL`; see the
+[isolated procedure](../docs/development-setup.md#initial-migration-and-isolated-constraint-verification)
+and [verification evidence](../docs/domain-schema-verification.md).
+
+Authentication, lesson APIs, AI, and deployment remain deferred. Migration
+application to the development database is pending. See the [CI guide](../docs/ci.md)
+for the developer-confirmed successful workflow; CI remains database-free.

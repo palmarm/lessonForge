@@ -66,7 +66,7 @@ npm run test:e2e
 ```
 
 The backend build runs first because its existing `prebuild` lifecycle script
-runs `prisma:generate`. This generates the model-free client before lint, type
+runs `prisma:generate`. This generates the domain client before lint, type
 checks, or tests import it. There is no separate generation step or second build.
 The type check uses the installed TypeScript binary because the backend has no
 `typecheck` npm script. Lint does not auto-fix; `npm test` uses `vitest run`, and
@@ -79,11 +79,14 @@ missing `backend/.env`; generation requires no database URL. Unit tests use fake
 and HTTP tests replace database access and mock environment loading where needed.
 No PostgreSQL service, repository secrets, or real credentials are needed.
 
-The workflow never invokes `test:db`, migrations, Docker Compose, API startup, or
-deployment. HTTP end-to-end tests cover the scaffold and shutdown behavior with
+The workflow never invokes `test:db`, `test:constraints`, migrations, Docker
+Compose, API startup, or deployment. HTTP end-to-end tests cover the scaffold and shutdown behavior with
 substituted database access; they do not prove live database connectivity or
 domain workflows. Live database evidence remains in the
 [database-foundation verification guide](database-foundation-verification.md).
+Initial domain migration enforcement is checked separately against a disposable
+database; see [domain verification](domain-schema-verification.md). Generation
+with models still requires no database URL or live PostgreSQL service.
 
 Dependency installation, Node setup, Prisma engine availability, and uncached
 Google Fonts builds need network access. npm caching reduces downloads but does

@@ -9,3 +9,112 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserRole {
+  TEACHER
+  ADMIN
+}
+
+enum GenerationOrigin {
+  MANUAL
+  AI_ASSISTED
+}
+
+enum ReviewDecision {
+  APPROVE
+  REQUEST_CHANGES
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  displayName  String
+  passwordHash String
+  role         UserRole
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+
+  lessons Lesson[]
+  reviews Review[]
+}
+
+model CurriculumResource {
+  id              String    @id @default(uuid()) @db.Uuid
+  title           String
+  subject         String
+  grade           String
+  sourceReference String
+  contentText     String
+  retiredAt       DateTime? @db.Timestamptz(6)
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
+
+  revisionSources RevisionSource[]
+}
+
+model Lesson {
+  id                    String            @id @default(uuid()) @db.Uuid
+  ownerId               String            @db.Uuid
+  draftContent          Json?             @db.JsonB
+  draftGenerationOrigin GenerationOrigin?
+  currentRevisionId     String?           @db.Uuid
+  copiedFromRevisionId  String?           @db.Uuid
+  version               Int               @default(1)
+  createdAt             DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime          @updatedAt @db.Timestamptz(6)
+
+  owner              User             @relation(fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  revisions          LessonRevision[] @relation("LessonHistory")
+  currentRevision    LessonRevision?  @relation("CurrentRevision", fields: [id, currentRevisionId], references: [lessonId, id], onDelete: Restrict, onUpdate: Restrict)
+  copiedFromRevision LessonRevision?  @relation("CopiedRevision", fields: [copiedFromRevisionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([ownerId, updatedAt])
+  @@index([currentRevisionId])
+  @@index([copiedFromRevisionId])
+}
+
+model LessonRevision {
+  id               String           @id @default(uuid()) @db.Uuid
+  lessonId         String           @db.Uuid
+  number           Int
+  content          Json             @db.JsonB
+  generationOrigin GenerationOrigin
+  submittedAt      DateTime         @default(now()) @db.Timestamptz(6)
+
+  lesson     Lesson           @relation("LessonHistory", fields: [lessonId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  currentFor Lesson[]         @relation("CurrentRevision")
+  copies     Lesson[]         @relation("CopiedRevision")
+  sources    RevisionSource[]
+  review     Review?
+
+  @@unique([lessonId, number])
+  @@unique([lessonId, id])
+}
+
+model Review {
+  id         String         @id @default(uuid()) @db.Uuid
+  revisionId String         @unique @db.Uuid
+  reviewerId String         @db.Uuid
+  decision   ReviewDecision
+  feedback   String?
+  decidedAt  DateTime       @default(now()) @db.Timestamptz(6)
+
+  revision LessonRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reviewer User           @relation(fields: [reviewerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([reviewerId])
+}
+
+model RevisionSource {
+  revisionId      String @db.Uuid
+  resourceId      String @db.Uuid
+  resourceVersion Int
+  snapshot        Json   @db.JsonB
+
+  revision LessonRevision     @relation(fields: [revisionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  resource CurriculumResource @relation(fields: [resourceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([revisionId, resourceId])
+  @@index([resourceId])
+}

@@ -43,8 +43,10 @@ backend database connection.
 
 ### 2. Manual lesson workflow
 
-- [ ] Select the sample subject, grade, and resources.
-- [ ] Design the database schema and initial migration.
+- [x] Select Grade 4 Mathematics and original fraction demonstration resources.
+- [ ] Prepare the exact sample resource text during seeding.
+- [x] Implement the domain models and initial migration; verify isolated constraints.
+- [ ] Apply the reviewed migration to the development database as a separate step.
 - [ ] Create sample teacher and administrator accounts.
 - [ ] Implement sign-in and backend permissions.
 - [ ] Browse curriculum resources.
@@ -135,6 +137,9 @@ Use the [development setup guide](development-setup.md) for current commands.
 Next task: select the sample subject, grade, and resources, then design the domain
 schema before creating the first migration.
 
+That next-task note records the database-foundation session. The context is now
+confirmed and the initial storage implementation is recorded below.
+
 ### GitHub Actions CI
 
 - Added independent `Frontend checks` and `Backend checks` jobs for PRs targeting
@@ -155,3 +160,15 @@ schema before creating the first migration.
 - `actionlint` and a separate local clean installation remain unverified. The
   successful GitHub run is separate evidence from the earlier local restrictions.
   See the CI guide for commands, limitations, and troubleshooting.
+
+### Initial domain models and migration
+
+- Implemented six domain models, the composite current-revision FK, restricted
+  deletion, and SQL checks/immutable-row/write-once triggers.
+- Generated the migration offline and verified deployment and constraints in a
+  separate disposable PostgreSQL database; see
+  [verification evidence](domain-schema-verification.md) for results and limits.
+- The development database was not contacted or migrated. Authentication,
+  lesson endpoints, lifecycle transactions, AI, and account/resource seeding remain
+  later work. Next: review the migration/application procedure, then implement
+  setup-created accounts, authentication, and backend permissions.

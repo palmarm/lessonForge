@@ -57,8 +57,11 @@ and Prisma 7 connectivity are implemented and verified locally, including startu
 failure paths, persistence, timeouts, and shutdown. The developer also verified
 frontend styling and its Turbopack build.
 See `docs/database-foundation-verification.md`
-for the evidence and check results. Domain schema design, authentication, lesson
-workflows and AI remain later tasks. The developer confirmed `Frontend checks`
+for the evidence and check results. Six domain models and the initial migration
+are implemented and tested in a disposable database; development-database
+application, authentication, lesson workflows, and AI remain pending. See
+`docs/domain-schema.md` and `docs/domain-schema-verification.md`.
+The developer confirmed `Frontend checks`
 and `Backend checks` passed on GitHub and the CI PR was merged into `staging`.
 Saved protection rules for `staging` and `main` require both checks and up-to-date
 branches before merging; reviewer approval remains disabled for solo development.
@@ -96,3 +99,5 @@ and PDF export are outside the initial MVP.
 - `docs/branching-strategy.md` — branches and pull-request workflow.
 - `docs/database-foundation-verification.md` — verification evidence.
 - `docs/ci.md` — CI coverage, commands, limitations, and troubleshooting.
+- `docs/domain-schema.md` — domain storage design and confirmed product decisions.
+- `docs/domain-schema-verification.md` — initial migration and constraint-test evidence.
