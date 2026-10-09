@@ -201,9 +201,17 @@ Because it uses `--rm` and temporary storage, this removes its container and
 disposable data. It does not affect Compose, `lessonforge_dev`, or its named volume.
 Ordinary unit/HTTP tests and CI never run this procedure.
 
-Applying the migration to the development database remains a separate manual
-step, not performed by this task. When you choose to change that database's schema,
-review the SQL and configured target first, then from the repository root run:
+The developer applied `20261008000000_initial_domain` to `lessonforge_dev` on
+2026-10-09 and confirmed Prisma migrate status reported “Database schema is up to
+date!” Backend build and compiled startup succeeded, `GET /` returned HTTP 200
+with body `LessonForge API`, and Ctrl+C returned promptly to the shell. See
+[verification evidence](domain-schema-verification.md) for the developer run and
+the historical agent checks, which did not access the development database.
+Authentication, seeding, and workflow services remain pending.
+
+Applying tracked migrations is still a separate manual step for a newly
+initialized development database; Compose and API startup do not apply them.
+Review the SQL and configured target first, then from the repository root run:
 
 ```bash
 ./backend/node_modules/.bin/prisma migrate deploy --config backend/prisma.config.ts
@@ -213,7 +221,8 @@ Unlike generation, this loads the normal backend configuration and changes the
 configured database by creating domain tables, enums, constraints, and triggers.
 It does not create sample accounts or resources. Do not run it during disposable
 verification, substitute a reset, or point the isolated test at the development
-database. No development-database application is claimed in the evidence.
+database. The developer's completed application is separate from isolated
+constraint verification.
 
 ## Application startup
 

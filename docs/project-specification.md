@@ -130,8 +130,9 @@ They do not guarantee factual accuracy.
 
 The proposed fields, relationships, and constraints are documented in
 [the domain schema design](domain-schema.md). Product decisions are confirmed;
-Prisma models and initial migration SQL are implemented; development-database
-application and the workflow services remain pending. See
+Prisma models and initial migration SQL are implemented; the developer confirmed
+development-database application on 2026-10-09. Authentication, seeding, and
+workflow services remain pending. See
 [domain verification](domain-schema-verification.md) for the storage checks.
 
 ## 9. Acceptance criteria

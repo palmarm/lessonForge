@@ -98,6 +98,22 @@ schema and migration were unchanged.
 The earlier 34-test evidence above remains historical. This follow-up does not
 establish a new GitHub Actions run or a separate clean dependency installation.
 
+## Developer-confirmed development verification (2026-10-09)
+
+After the isolated implementation and review checks above, the developer reported:
+
+- Migration `20261008000000_initial_domain` applied successfully to `lessonforge_dev`.
+- Prisma migrate status reported “Database schema is up to date!”
+- Backend build and compiled production startup succeeded.
+- `GET /` returned HTTP 200 with body `LessonForge API`.
+- Ctrl+C returned promptly to the shell.
+
+These are developer-confirmed results, not checks independently rerun by the
+agent. The historical agent evidence remains accurate: the implementation agent
+did not access or migrate the development database. Authentication, seeding, and
+workflow services remain pending; this run verifies migration application and
+scaffold startup rather than implemented domain workflows.
+
 ## Enforcement limits and pending work
 
 NestJS still must enforce authenticated roles/ownership, authorization before
@@ -114,9 +130,10 @@ draft lesson, and draft JSON resource IDs are not relational FKs. No application
 hard-delete paths are planned. Row triggers do not protect against privileged
 DDL, trigger disabling, or `TRUNCATE`; deployment permissions remain future work.
 
-Development-database application, authentication, lesson endpoints, lifecycle
-services/concurrency tests, AI, and seeding are pending. `test:db` remains the
-separate read-only development connectivity check. Ordinary tests and CI remain
+Authentication, lesson endpoints, lifecycle services/concurrency tests, AI, and
+seeding are pending. Development-database application was verified by the developer
+on 2026-10-09. `test:db` remains the separate read-only development connectivity
+check. Ordinary tests and CI remain
 database-free and never invoke `test:constraints` or migrations. Follow the
 [isolated procedure](development-setup.md#initial-migration-and-isolated-constraint-verification)
 to reproduce real enforcement checks; do not substitute schema-text assertions

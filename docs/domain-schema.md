@@ -3,8 +3,10 @@
 ## Scope and authority
 
 The six Prisma models and initial migration SQL now implement this storage design.
-The migration was generated offline and tested only in a disposable database;
-it has not been applied to `lessonforge_dev`. Workflow services remain pending. The
+The implementation agent generated the migration offline and tested it only in
+a disposable database. On 2026-10-09, the developer confirmed successful application
+to `lessonforge_dev` and up-to-date migration status. Authentication, seeding, and
+workflow services remain pending. The
 [project specification](project-specification.md) is authoritative, particularly
 sections 2–8. The [architecture](architecture.md) assigns authorization,
 validation, and transactions to NestJS. The [roadmap](roadmap.md) places the manual
@@ -29,7 +31,7 @@ accounts, search infrastructure, PDF export, or AI-provider tables. Session stor
 belongs to the later authentication implementation, as already noted in the
 architecture. Product decisions recorded below are confirmed; the storage and
 transaction design describes future NestJS services; models and migration SQL
-are implemented, while development-database application remains pending.
+are implemented and the developer has verified development-database application.
 
 ## Entities and relationships
 
@@ -411,9 +413,10 @@ version check before adoption; failure leaves saved work intact.
 These decisions are developer-confirmed product policy, not open questions.
 The four original product questions are resolved. No blocking product question
 remains for this initial design. Exact resource text is seed preparation work;
-session storage, password hashing, payload bounds, and final migration SQL remain
-implementation choices for their respective tasks. Prisma models and the initial
-migration SQL are implemented; applying them to the development database is pending.
+session storage, password hashing, and payload bounds remain implementation
+choices for their respective tasks. Prisma models and the reviewed initial
+migration SQL are implemented; the developer confirmed application to the
+development database on 2026-10-09. Future schema changes require new migrations.
 
 ### Implementation choices recommended without a new product feature
 
@@ -444,8 +447,8 @@ and design first. None is assumed here or needed for the documented MVP.
    during seeding. Keep the AI milestone deferred.
 2. Completed: translate entities, enums, relations, indexes, and SQL protections
    into models and a reviewed initial migration, with real disposable-database
-   constraint tests. Development-database application is a separate pending step;
-   ordinary CI tests remain database-free.
+   constraint tests. The developer also verified development-database application
+   on 2026-10-09; ordinary CI tests remain database-free.
 3. Implement setup-created users, password authentication/session handling, and
    backend role/ownership checks. Seed sample resources without production secrets.
 4. Implement administrator resource management and teacher draft creation, save,

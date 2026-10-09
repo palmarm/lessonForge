@@ -12,8 +12,11 @@ container-recreation persistence, real stalled-connection/query timeouts, and
 live SIGTERM shutdown.
 The [domain schema design](domain-schema.md) records the confirmed Grade 4
 Mathematics context and validation policies. The six domain models and initial
-migration SQL are implemented and verified in a disposable database. Application
-to `lessonforge_dev`, authentication, and product workflows remain pending; see
+migration SQL are implemented and verified in a disposable database. On
+2026-10-09, the developer confirmed successful migration application to
+`lessonforge_dev` and up-to-date migration status, backend build and compiled
+startup, an HTTP 200 `GET /` response with body `LessonForge API`, and prompt
+Ctrl+C shutdown. Authentication, seeding, and workflow services remain pending; see
 [domain verification](domain-schema-verification.md).
 
 ## 1. Technology choices

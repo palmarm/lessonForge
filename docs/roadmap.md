@@ -46,7 +46,7 @@ backend database connection.
 - [x] Select Grade 4 Mathematics and original fraction demonstration resources.
 - [ ] Prepare the exact sample resource text during seeding.
 - [x] Implement the domain models and initial migration; verify isolated constraints.
-- [ ] Apply the reviewed migration to the development database as a separate step.
+- [x] Apply the reviewed migration to the development database as a separate step.
 - [ ] Create sample teacher and administrator accounts.
 - [ ] Implement sign-in and backend permissions.
 - [ ] Browse curriculum resources.
@@ -168,7 +168,13 @@ confirmed and the initial storage implementation is recorded below.
 - Generated the migration offline and verified deployment and constraints in a
   separate disposable PostgreSQL database; see
   [verification evidence](domain-schema-verification.md) for results and limits.
-- The development database was not contacted or migrated. Authentication,
-  lesson endpoints, lifecycle transactions, AI, and account/resource seeding remain
-  later work. Next: review the migration/application procedure, then implement
-  setup-created accounts, authentication, and backend permissions.
+- Historical implementation-agent evidence: the development database was not
+  contacted or migrated; verification used only disposable targets.
+- On 2026-10-09, the developer confirmed `20261008000000_initial_domain` applied
+  successfully to `lessonforge_dev` and Prisma migrate status reported
+  “Database schema is up to date!” Backend build and compiled production startup
+  succeeded; `GET /` returned HTTP 200 with body `LessonForge API`, and Ctrl+C
+  returned promptly to the shell.
+- Authentication, lesson endpoints, lifecycle transactions, AI, and
+  account/resource seeding remain pending. Next: implement setup-created accounts,
+  authentication, and backend permissions.
