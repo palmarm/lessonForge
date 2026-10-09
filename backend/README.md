@@ -49,6 +49,11 @@ loads `.env` or falls back to `DATABASE_URL`; see the
 [isolated procedure](../docs/development-setup.md#initial-migration-and-isolated-constraint-verification)
 and [verification evidence](../docs/domain-schema-verification.md).
 
-Authentication, lesson APIs, AI, and deployment remain deferred. Migration
-application to the development database is pending. See the [CI guide](../docs/ci.md)
+On 2026-10-09, the developer confirmed the initial migration applied to
+`lessonforge_dev`, Prisma reported up-to-date migration status, and the backend
+build and compiled startup succeeded. `GET /` returned HTTP 200 with body
+`LessonForge API`; Ctrl+C returned promptly to the shell. See the
+[domain verification evidence](../docs/domain-schema-verification.md) for this
+later developer run and the earlier isolated agent checks. Authentication,
+seeding, workflow services, AI, and deployment remain pending. See the [CI guide](../docs/ci.md)
 for the developer-confirmed successful workflow; CI remains database-free.

@@ -58,8 +58,10 @@ failure paths, persistence, timeouts, and shutdown. The developer also verified
 frontend styling and its Turbopack build.
 See `docs/database-foundation-verification.md`
 for the evidence and check results. Six domain models and the initial migration
-are implemented and tested in a disposable database; development-database
-application, authentication, lesson workflows, and AI remain pending. See
+are implemented and tested in a disposable database. On 2026-10-09, the developer
+confirmed migration application to `lessonforge_dev`, up-to-date migration status,
+a successful backend build and compiled API response, and prompt Ctrl+C shutdown.
+Authentication, seeding, lesson workflows, and AI remain pending. See
 `docs/domain-schema.md` and `docs/domain-schema-verification.md`.
 The developer confirmed `Frontend checks`
 and `Backend checks` passed on GitHub and the CI PR was merged into `staging`.
