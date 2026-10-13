@@ -56,9 +56,11 @@ build and compiled startup succeeded. `GET /` returned HTTP 200 with body
 `LessonForge API`; Ctrl+C returned promptly to the shell. See the
 [domain verification evidence](../docs/domain-schema-verification.md) for this
 later developer run and the earlier isolated agent checks. This run predates the
-Session migration. Backend authentication is now implemented; Session migration
-application to development, provisioning, frontend sign-in, seeding, workflow
-services, AI, and deployment remain pending. See the [CI guide](../docs/ci.md)
+Session migration. On 2026-10-13 the developer confirmed both migrations, connectivity,
+build/compiled startup, expected root/me responses, prompt shutdown, and cleanup
+deleting zero invalid sessions (exit 0). Backend authentication and guarded local
+account provisioning are implemented; developer provisioning, frontend sign-in,
+seeding, workflow services, AI, and deployment remain pending. See the [CI guide](../docs/ci.md)
 for the developer-confirmed successful workflow; CI remains database-free.
 
 Backend auth endpoints are `POST /auth/login`, `GET /auth/me`, and
@@ -74,5 +76,15 @@ only on a fresh disposable target under the same guards as `test:constraints`.
 The two suites require different fresh containers; neither is ordinary CI.
 `npm run sessions:cleanup` explicitly deletes invalid operational session rows
 (up to 10,000) using normal backend configuration after build/migration. It is never
-a startup/CI task. Account provisioning and frontend sign-in remain later steps.
+a startup/CI task.
 See [procedures](../docs/development-setup.md#backend-authentication-step-1).
+
+From the repository root, `npm run build --prefix backend` generates/compiles only,
+then `npm run accounts:provision --prefix backend` interactively creates explicitly
+supplied missing teacher/admin accounts on the guarded local development target.
+It requires target acknowledgement, hides password/confirmation input, preserves
+matching existing accounts, and rejects role/name conflicts transactionally.
+See [provisioning setup](../docs/development-setup.md#safe-local-account-provisioning-step-2).
+`npm run test:accounts:db --prefix backend` tests the shared service only on another
+fresh guarded disposable target; it never invokes the real CLI against development.
+Frontend login remains a separate step.

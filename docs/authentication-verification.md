@@ -4,8 +4,9 @@
 
 Step 1 of [authentication design](authentication-design.md) implements backend
 sessions, login/me/logout, default authentication/role guards, cookie/CORS/CSRF
-policy, bounded rate/KDF work, and an explicit cleanup CLI. Provisioning and the
-Next.js login interface remain steps 2 and 3. Ownership and workflow services,
+policy, bounded rate/KDF work, and an explicit cleanup CLI. Step 2 adds guarded
+local account provisioning; the Next.js login interface remains step 3.
+Ownership and workflow services,
 seeding, password recovery, and AI are not implemented here.
 
 `20261009000000_add_sessions` is additive. It creates Session with UUID identity,
@@ -208,7 +209,242 @@ Native KDF shutdown latency under load and latency/memory benchmarking were not
 measured. The earlier lifecycle/drain-order tests and real hash/verify results
 do not establish those measurements.
 
+## Account provisioning checks on 2026-10-13
+
+Step 2 implements `accounts:provision` as a separate compiled entrypoint. Both
+terminal streams and zero arguments are required before environment loading.
+The local-development URL guard runs before client construction; interactive
+acknowledgement and validated account details precede connection. The connected
+database identity is checked too. Password/confirmation input is hidden and kept
+out of readline history. Cancellation restores terminal mode, drains accepted
+native work, and disconnects; messages never include supplied secrets or driver
+errors. A failure around commit can require a safe rerun to confirm state.
+
+The CLI skips password prompts for matching existing roles/names. The shared
+`AccountsService` validates both accounts, skips hashing for matching reruns,
+hashes missing credentials using the existing Argon2 service outside the
+transaction, and locks/rechecks existing User rows before creating any missing
+rows. Email races abort the whole transaction
+and request a rerun; no upsert/password/role/name/ID replacement exists. The shared
+password validator preserves existing login bounds and uses the fifteen-code-point
+provisioning minimum. No migration, model, HTTP endpoint, default credential,
+resource seed, or frontend behavior was added.
+
+| Check | Result |
+|---|---|
+| Production build with Prisma generation | Passed |
+| Non-mutating lint and full TypeScript | Passed |
+| Ordinary unit suite | 162 passed, including 54 provisioning cases |
+| Full database-free HTTP suite | 52 passed |
+| Fresh disposable provisioning suite and two-migration chain | 10 passed |
+| Compiled terminal-only probes | Success, Ctrl+C, empty-prompt Ctrl+D, and SIGTERM passed; hidden input and original TTY settings verified |
+| Compiled CLI refusal probes | Noninteractive input, redirected output, and wrong target rejected with sanitized messages and exit 1 |
+| Changed-code formatting and whitespace | Passed |
+
+Checks ran on Node 24.21.0 using `/tmp/lessonforge-provision-check-5oigipl6/backend`,
+copied without `.env*`, build output, or generated client, and linked to existing
+installed dependencies. No installation ran. All ten changed/new backend
+implementation/test/configuration/manifest files matched the final verification
+copy. Ordinary tests cover validation, target/acknowledgement guards, reruns,
+confirmation/role/name conflicts, native failures, cancellation before a
+transaction, terminal EOF/signal/input errors, sanitized errors, and cleanup.
+The terminal-only probes import the compiled prompt class without environment or
+database code. The actual compiled CLI was invoked only for refusal checks in the
+isolated copy, never against development.
+
+Live tests use the existing exact disposable URL/acknowledgement, connected
+database/role identity, and empty-public-schema preflight before migrations and
+fixtures. They verify real Argon2 credentials and persistence across clients,
+unchanged reruns including full stored-row timestamps/hashes, missing-only
+creation, role/name conflict refusal, rollback after real inserts, cancellation
+rollback, a committed name change before the transaction recheck, a real
+concurrent unique-email insert winning over provisioning, and a PostgreSQL-observed
+UPDATE waiting for provisioning's retained share lock. Fixture domain/session rows
+remain unchanged. Timeouts and unrelated errors cannot satisfy successful outcomes.
+
+The initial sandbox live attempt failed at the identity query before writes;
+the permitted rerun passed all ten cases. HTTP listeners were initially denied
+with `EPERM`; the permitted rerun passed all 52. Terminal cancellation/error
+issues found during unit verification were fixed before the final 162-test pass.
+Neither a blocked attempt nor an intermediate failing run counts as passing evidence.
+
+Both task-created PostgreSQL 17.11 containers used localhost `5434:5432`, tmpfs
+storage, no mounts, and automatic removal. The first was
+`lessonforge-provision-agent-20261013`, ID
+`f21cb0a4999076edf14457e45927c91573f0cd057107ef3208f038922575220c`.
+The final fresh run was `lessonforge-provision-final-20261013`, ID
+`a38d7da5f768b2e33a131158a01b25a88509a2b35fc2d86d321dd3a4e91f29bd`.
+Only these verified task-created containers were stopped; removal of both was
+confirmed. The isolated copy, its dependency symlink, path record, and terminal
+probe were removed; repository dependencies remain intact. No task-created
+container or command process remains running. No development database, existing
+container/volume, or real environment file was accessed. Both applied migration
+files, Prisma schema, and
+the installed dependency lockfile are unchanged. The earlier 30 live authentication
+and 39 domain constraint passes are retained rather than rerun; their storage and
+session implementation are unchanged. These local checks are separate from a
+new GitHub run, a clean native installation, and deployment/KDF performance measurements.
+
+## Provisioning terminal isolation fix on 2026-10-13
+
+The follow-up review reproduced a password exposure missed by the earlier 162
+unit tests and compiled terminal probes: readline retains Ctrl+U/Ctrl+Y cut/yank
+text independently of `historySize: 0`. Reopening the output gate after hidden
+confirmation allowed that text to be echoed while provisioning was pending.
+The earlier passing evidence above is historical and did not cover this case.
+
+`TerminalAccountPrompts` now closes and recreates the readline interface for
+every prompt. A separate silent interface between prompts handles cancellation
+without forwarding editing output; it is discarded before the next prompt.
+Secret and idle editing buffers therefore cannot reach a later visible prompt.
+Each retired output gate stays muted. Visible answers mute their gate
+synchronously on the public `line` event, including when extra keys follow Enter
+in the same input chunk. The implementation uses public readline APIs without
+reading or changing private editing state. Password whitespace/Unicode,
+confirmation, original terminal-mode restoration, and CLI cleanup are preserved.
+
+Seven additional regression cases use the actual Node readline implementation
+with terminal streams, rather than mocked prompt answers. They cover password
+cut/yank and confirmation, silent idle editing, fresh visible prompts, and input
+following submission in the same chunk. The real CLI runner is held at a fixture
+hash promise after both confirmations: Ctrl+Y, text, cursor/history keys,
+backspace, and tab remain silent. Success and Ctrl+C, empty-line Ctrl+D, signal,
+input-error, and output-error cancellation verify restored raw mode, preserved
+password input, expected account writes or their absence, password-service drain,
+and database disconnection. Captured output must never contain the fixture
+password or its identifying text.
+
+| Check | Result |
+|---|---|
+| Affected provisioning unit suite | 61 passed |
+| Full ordinary unit suite | 169 passed across 11 files |
+| Production build with Prisma generation | Passed |
+| Non-mutating type-aware lint and full TypeScript | Passed |
+| Compiled real pseudo-terminal probe | Nine cases passed; fixture input hidden and original TTY attributes restored |
+| Changed-code formatting and whitespace | Passed |
+
+The compiled probe imported the final built prompt class in a real pseudo-terminal
+without invoking configuration loading or database code. It verified cut/yank
+password entry and independent confirmation, silent editing while deliberately
+held pending, and a subsequent visible prompt with no retained secret or echoed
+post-submission input. Ctrl+C, empty-line Ctrl+D, SIGTERM, and an input error were
+tested both during hidden entry and while pending. All nine children exited
+successfully and restored their complete original TTY settings.
+
+Checks ran on Node 24.21.0 in `/tmp/lessonforge-terminal-fix-qssn_ni8`, using an
+isolated backend copy excluding `.env*`, generated output, and dependencies, with
+a symlink to the existing installed packages. No package installation ran. An
+attempt running the full suite alongside build/type checks timed out in two
+authentication tests (167 passed); the subsequent full-suite run without those
+concurrent checks passed all 169 with unchanged test deadlines. The failed attempt
+does not count as passing evidence. Both changed source/test files matched the
+final verification copy. The copy, dependency symlink, compiled probe, and its
+processes were removed after verification.
+
+Database/service/schema/migration behavior is unchanged. The recorded 10 live
+provisioning, 30 live authentication, 39 domain constraint, and 52 HTTP passes are
+reused rather than rerun. No real environment file or development database was
+accessed, and the real provisioning CLI was not invoked. The reported terminal
+password-exposure finding is resolved. The developer provisioning, fresh CI/native
+installation, and deployment/performance gaps remain separate from this fix.
+
+## Continuous terminal raw-mode fix on 2026-10-13
+
+The next read-only review confirmed the cut/yank isolation fix but reproduced a
+separate OS-level echo window. Node 24's `readline.close()` disabled raw mode on
+the real input before the replacement interface enabled it again. Output gates
+cannot suppress the terminal driver's echo. The earlier nine PTY probes covered
+stable prompt/pending phases and final restoration, not input arriving during
+replacement; their passing evidence above is preserved with that limitation.
+
+The prompt owner now enables raw mode once and pipes the real input into a plain
+`PassThrough`. Fresh readline editors receive only that stream, which has no
+`setRawMode` method. Closing an editor pauses/detaches the bridge editor without
+changing the real TTY. The owner alone restores its prior raw mode during final
+cleanup, including cancellation, EOF, stream errors, and initialization failure.
+Cleanup unpipes and destroys the bridge and removes owner error/abort listeners.
+No readline internals or real-input methods are patched by the implementation.
+Isolated cut/yank/undo state, silent pending input, synchronous output muting on
+submission, confirmation, and exact password whitespace remain intact.
+
+Two new unit cases exercise 30 hidden prompt/idle transitions for each original
+raw-mode state. They require exactly one real-input `setRawMode(true)` call while
+the owner is active, one restoration call on idempotent final close, and removal
+of the stable pipe listeners. The existing real-readline cut/yank, later-visible
+prompt, same-chunk trailing-input, held-provisioning cancellation, and connection
+cleanup regressions continue to pass.
+
+The reusable fixture-only scripts
+[`provisioning.terminal-pty.py`](../backend/test/provisioning.terminal-pty.py) and
+[`provisioning.terminal-probe.mjs`](../backend/test/provisioning.terminal-probe.mjs)
+run against the compiled prompt class. The pressure case sends fixture secret
+input continuously across 500 hidden prompts and their idle replacements,
+checks the PTY's `ECHO` flag, and observes public raw-mode calls without delaying
+or changing them. No restoration call is allowed during replacement. A final
+barrier stops/drains the writer before permitting owner cleanup; captured output
+before restoration must contain neither the password nor its identifying text.
+The other eleven cases retain cut/yank and independent confirmation, pending
+editing, later visible input, Ctrl+C, empty-line Ctrl+D, SIGTERM, and input/output
+error coverage during hidden entry and pending work. Every child exited 0 and
+restored the complete original TTY attributes.
+
+| Check | Result |
+|---|---|
+| Affected provisioning unit suite | 63 passed |
+| Full ordinary unit suite | 171 passed across 11 files |
+| Compiled real-PTY probes, including replacement pressure | 12 passed |
+| Production build with Prisma generation | Passed |
+| Non-mutating type-aware lint and full TypeScript | Passed |
+| Changed TypeScript/JavaScript formatting, Python syntax, and whitespace | Passed |
+
+These checks used Node 24.21.0 and Python 3.14.4 in
+`/tmp/lessonforge-terminal-owner-jp_tymag/backend`, copied without `.env*`, generated
+output, build output, or dependencies and linked to the existing installed
+packages. No packages were installed. Build completed before the checks that
+consume generated output; the full unit suite ran without concurrent heavy
+checks. All four changed/new implementation and test files matched the final
+verification copy. The isolated workspace, dependency symlink, build/probe
+artifacts, and probe processes were removed after verification.
+
+The reusable PTY regression requires Python 3, POSIX PTYs/signals, Node 24, and an
+up-to-date backend build. From the repository root after a build, run:
+
+```bash
+python3 backend/test/provisioning.terminal-pty.py
+```
+
+It opens only disposable PTYs and runs fixture-only child processes; it does not
+load environment configuration or connect to a database. Stream-error cases
+inject public error events rather than physically breaking terminal file
+descriptors. This is local Linux/PTY evidence; other host terminal implementations
+and fresh CI/native installations remain separate verification gaps.
+
+The real provisioning CLI was not invoked, and no real environment file or
+development database was accessed. Provisioning transactions, password services,
+schema, migrations, and package lock are unchanged. The recorded 10 live
+provisioning, 30 live authentication, 39 domain constraint, and 52 HTTP passes are
+reused. Both the retained editing-state issue and the replacement OS-echo window
+are resolved by the final implementation; the existing developer provisioning
+and deployment/performance gaps remain separate.
+
 ## Developer commands and remaining gaps
+
+### Developer provisioning rerun on 2026-10-13
+
+The developer ran the compiled `accounts:provision` CLI against
+`lessonforge_dev`, repeating the same teacher and administrator details. The CLI
+reported `Teacher account: unchanged.` and `Administrator account: unchanged.`
+No password prompts appeared on this rerun. This confirms only the reported
+unchanged outcomes; no password values or successful login are established by
+this run. Frontend login remains pending.
+
+Developer-confirmed verification on 2026-10-13 is recorded separately from agent
+checks: both migrations applied; Prisma status up to date with exit 0; development
+connectivity passed; backend build and compiled startup succeeded; `GET /` returned
+`LessonForge API`; unauthenticated `/auth/me` returned 401; Ctrl+C returned promptly;
+`sessions:cleanup` deleted 0 invalid records and exited 0. The agent did not access
+development or run these commands. This closes the earlier Session application,
+compiled development startup, and cleanup-entrypoint evidence gaps.
 
 From the repository root, review the new SQL and your configured target, then:
 
@@ -224,8 +460,19 @@ configured database; with the initial migration applied it adds Session storage.
 Status only reports migration state. Startup verifies connectivity and listens;
 it does not migrate or seed. The agent has not run these against development.
 `GET /` stays public, and `GET /auth/me` without a session should return 401.
-Ctrl+C should await cleanup and return to the shell. Real local login needs step 2
-account provisioning; no provision command/default credentials exist yet.
+Ctrl+C should await cleanup and return to the shell. No default credentials
+exist:
+
+```bash
+npm run build --prefix backend
+npm run accounts:provision --prefix backend
+```
+
+Build generates/compiles only. Provisioning interactively creates only explicitly
+supplied missing teacher/admin accounts on the guarded development target; matching
+reruns preserve IDs/passwords/roles/names. See
+[setup](development-setup.md#safe-local-account-provisioning-step-2) for prompts,
+validation, cancellation, and concurrent-conflict behavior.
 
 After a successful build/migration, `npm run sessions:cleanup --prefix backend`
 is an explicitly mutating maintenance command deleting invalid Session rows only,
@@ -247,15 +494,12 @@ after disposing/recreating the dedicated container. Both commands apply migratio
 and mutate only disposable fixture data. A populated target is deliberately refused.
 No installation is needed for this task's already-installed dependencies.
 
-Remaining evidence: developer application/status of the Session migration and
-compiled startup against it; a GitHub Actions run containing this implementation;
+Remaining evidence: a GitHub Actions run containing this implementation;
 a fresh native-package installation on the actual runner/host; deployed/browser
 cookie and CSRF behavior; realistic KDF latency/memory benchmarking and native
 KDF shutdown latency under active/queued hashing work. Neither latency measurement
 has been performed; lifecycle/drain-order regression tests are not such a measurement.
-The standalone
-cleanup CLI entrypoint has not been executed; its build and the shared cleanup
-service’s live SQL/race/limit tests passed. Local account provisioning and frontend
-login are pending implementations. Public deployment
+The developer has now executed the cleanup CLI as recorded above. Frontend
+login is a pending implementation. Public deployment
 also requires selected HTTPS same-site origins, trusted proxy/ingress policy,
 shared/edge rate limiting, and an hourly cleanup scheduler.

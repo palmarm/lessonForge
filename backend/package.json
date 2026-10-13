@@ -29,6 +29,8 @@
     "test:db": "vitest run --config ./vitest.config.db.ts",
     "test:constraints": "vitest run --config ./vitest.config.constraints.ts",
     "sessions:cleanup": "node dist/auth/sessions-cleanup.js",
+    "accounts:provision": "node dist/auth/accounts-provision.js",
+    "test:accounts:db": "vitest run --config ./vitest.config.accounts-db.ts",
     "test:auth:db": "vitest run --config ./vitest.config.auth-db.ts"
   },
   "dependencies": {

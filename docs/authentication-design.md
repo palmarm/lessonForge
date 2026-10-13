@@ -2,10 +2,10 @@
 
 ## Authority and status
 
-This design was finalized on 2026-10-09. Step 1 (backend authentication) is now
-implemented; [authentication verification](authentication-verification.md) records
-actual checks and remaining gaps. Account provisioning and the Next.js interface
-remain planned steps 2 and 3.
+This design was finalized on 2026-10-09. Steps 1 (backend authentication) and 2
+(safe local account provisioning) are now implemented;
+[authentication verification](authentication-verification.md) records
+actual checks and remaining gaps. The Next.js interface remains planned step 3.
 The [specification](project-specification.md), [architecture](architecture.md),
 [domain design](domain-schema.md), and existing Prisma schema remain authoritative.
 The confirmed authentication decision is PostgreSQL-backed opaque sessions in an
@@ -15,10 +15,14 @@ database. NestJS owns authentication, authorization, and database access.
 The existing six-model migration `20261008000000_initial_domain` is applied to
 `lessonforge_dev`, as [confirmed by the developer](domain-schema-verification.md).
 Do not edit that migration. The additive `20261009000000_add_sessions` migration
-implements Session storage; application to the development database remains a
-separate developer step. The API now exposes login/me/logout and default/role
-guards. The Next.js page still has no login interface or API client. Provisioning,
-seeding, ownership/workflow services, and AI remain pending.
+implements Session storage. On 2026-10-13 the developer confirmed both migrations
+applied, up-to-date status, development connectivity, compiled startup, public root
+and unauthenticated me responses, prompt shutdown, and successful explicit session
+cleanup. The API exposes login/me/logout and default/role guards. The developer
+also confirmed a compiled provisioning rerun on `lessonforge_dev` on 2026-10-13:
+both accounts were unchanged and no password prompts appeared. The Next.js page
+still has no login interface or API client. Frontend sign-in, seeding,
+ownership/workflow services, and AI remain pending.
 
 Historical planning evidence: the earlier design task installed nothing, created
 no migration, and did not read real environment files or access any database.
@@ -383,15 +387,14 @@ sanitized-error approach for connectivity failures.
 
 ## Explicit local account provisioning
 
-Implement an interactive compiled CLI in step 2, tentatively:
+Step 2 implements this explicit interactive compiled CLI:
 
 ```bash
 npm run build --prefix backend
 npm run accounts:provision --prefix backend
 ```
 
-These are **planned** commands: `accounts:provision` does not exist yet. Build
-generates/compiles the backend and applies no migration; provisioning would create
+Build generates/compiles the backend and applies no migration; provisioning creates
 only the explicitly entered local accounts after migrations have been applied.
 It must never run automatically in build, startup, Prisma generation, or CI.
 
@@ -418,6 +421,27 @@ No default credentials, public registration, resource seeding, or password/role
 reset switches. If a later maintenance command is needed, design explicit
 confirmation and session revocation separately. Always disconnect Prisma and
 return a nonzero exit code on failure/cancellation.
+
+The acknowledgement text is exactly `provision lessonforge_dev`. Both stdin and
+stdout must be terminals; every command-line argument is rejected. Password entry
+and confirmation show `[input hidden]`, suppress terminal echo/redraw, and disable
+input history. The prompt owner holds raw/no-echo mode continuously until final
+cleanup. Fresh readline editors use a plain stream bridge without terminal-mode
+methods, so replacing an editor cannot restore OS echo or carry secret editing
+state into another prompt. Ctrl+C, EOF (Ctrl+D at an empty prompt), and SIGTERM
+cancel and restore the prior terminal mode. Accepted native work drains and a
+cancelled transaction rolls back before disconnect. Cancellation during commit
+may arrive after the atomic commit point;
+rerunning safely reports committed matching accounts unchanged.
+
+`AccountsService` hashes only currently missing accounts outside its transaction,
+then rechecks and retains `FOR SHARE` locks on existing User rows through commit.
+All role/name conflicts are checked before insertion. An email uniqueness race
+aborts the entire transaction with a sanitized instruction to rerun; it never
+updates the winning row. A disappeared existing account without a supplied password
+also aborts. The shared password bounds preserve login's one-code-point minimum;
+provisioning uses fifteen. Roles are assigned by the backend for the teacher/admin
+positions, and email/display-name canonicalization is repeated in the service.
 
 Separate the guarded CLI entrypoint from a provisioning service taking an already
 authorized client and supplied account data. Only the interactive local command
@@ -599,6 +623,6 @@ revision. Password recovery/MFA/account management remain outside this task.
 Historical planning status: only this design and its official-source/package
 review were completed in the planning task; authentication implementation and its
 checks were then pending. See [authentication verification](authentication-verification.md)
-for the later backend implementation evidence. Browser verification, provisioning,
-development application of the Session migration, and production configuration
-remain pending; prior domain/foundation evidence does not verify those steps.
+for the later backend implementation and developer verification evidence. Browser
+verification and production configuration remain pending; prior domain/foundation
+evidence does not verify those steps.

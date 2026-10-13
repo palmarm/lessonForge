@@ -207,9 +207,12 @@ date!” Backend build and compiled startup succeeded, `GET /` returned HTTP 200
 with body `LessonForge API`, and Ctrl+C returned promptly to the shell. See
 [verification evidence](domain-schema-verification.md) for the developer run and
 the historical agent checks, which did not access the development database.
-That developer run predates the additive Session migration. Backend authentication
-is now implemented; applying Session storage to development, account provisioning,
-frontend sign-in, seeding, and workflow services remain pending.
+That developer run predates the additive Session migration. On 2026-10-13 the
+developer separately confirmed both migrations applied, up-to-date Prisma status
+(exit 0), development connectivity, build/compiled startup, the expected root/me
+responses, prompt Ctrl+C, and session cleanup deleting zero invalid records (exit 0).
+Local account provisioning is implemented below; developer execution, frontend
+sign-in, seeding, and workflow services remain pending.
 
 Applying tracked migrations is still a separate manual step for a newly
 initialized development database; Compose and API startup do not apply them.
@@ -234,8 +237,8 @@ The backend exposes `POST /auth/login`, `GET /auth/me`, and `POST /auth/logout`.
 Other routes require authentication unless explicitly public; `GET /` stays public.
 The new `20261009000000_add_sessions` migration must be reviewed/applied with the
 manual migration command above before using sessions. No account is created by
-migration, build, or startup. The explicit account-provisioning command and
-frontend login are later steps and are not available yet.
+migration, build, or startup. Safe local account provisioning is available as step 2
+below; frontend login remains step 3.
 
 Existing ignored backend environment files are not automatically rewritten. Add
 these nonsecret settings yourself if needed (they are also the local defaults):
@@ -253,7 +256,7 @@ at `127.0.0.1:5433`. With `NODE_ENV=production`, supply explicit HTTPS origins a
 `AUTH_COOKIE_MODE=https`; compiled local startup alone does not select production
 transport. HTTPS UI/API must use a controlled same-site domain. See
 [authentication design](authentication-design.md) for cookie/proxy/limiter deployment
-prerequisites and pending interface/provisioning steps.
+prerequisites and pending interface verification.
 
 Browser requests must include credentials. Unsafe requests (including public
 login/logout) require an allowed `Origin`, `Content-Type: application/json`, and
@@ -301,6 +304,68 @@ transaction** to prove the expiry check itself, then restoration is asserted.
 Stop only `lessonforge-auth-test` afterward; a new `test:constraints` run needs
 another fresh container. Never reuse a populated target or stop Compose to free
 its port. No authentication test contacts `lessonforge_dev`.
+
+## Safe local account provisioning (step 2)
+
+After reviewing the configured local target and applying both migrations, run
+these commands from the repository root in an interactive terminal:
+
+```bash
+npm run build --prefix backend
+npm run accounts:provision --prefix backend
+```
+
+Build regenerates the Prisma client and compiles the backend without modifying a
+database. Provisioning loads ignored `backend/.env` with shell precedence and
+accepts only `127.0.0.1:5433/lessonforge_dev` without query parameters, before
+constructing a client. It displays only host/port/database and requires typing
+exactly `provision lessonforge_dev`; refusing this acknowledgement creates no client.
+Both stdin and stdout must be terminals. No arguments, password flags, or piped
+credentials are accepted.
+
+Enter teacher email/display name, then administrator email/display name. Emails
+are trimmed/lowercased using login's rules; they must be distinct. Display names
+are trimmed, nonblank, at most 80 Unicode code points/320 UTF-8 bytes. For each
+missing account, enter a password and exact confirmation at `[input hidden]`
+prompts. Passwords require 15–128 Unicode code points, at most 512 UTF-8 bytes,
+and no NUL; spaces/Unicode are preserved. Nothing is echoed or stored in terminal
+input history. There are no example/default passwords.
+
+The command creates only the supplied missing accounts with fixed TEACHER/ADMIN
+roles and the existing Argon2id settings. One transaction commits both accounts or
+rolls back its writes. Matching existing roles/names report `unchanged`, skip
+password prompts/hashing, and retain all stored fields. A conflicting role/name
+refuses the operation. Accounts are rechecked inside the transaction; a concurrent
+insert or disappearance can abort and require a safe rerun without overwriting
+another account. No sessions, curriculum resources, or lessons are seeded.
+
+Ctrl+C, EOF (Ctrl+D at an empty prompt), or SIGTERM cancels, restores terminal
+mode, drains accepted native work, and disconnects. Failures/cancellation exit
+nonzero with sanitized messages; success exits 0. If interruption or a connection failure arrives around
+commit, rerun with the same details to confirm state; a committed matching account
+is left unchanged. Password/role reset is a separate, unimplemented operation.
+The agent never runs this command against the development database.
+
+### Disposable provisioning tests
+
+`test:accounts:db` tests the shared service rather than bypassing the real CLI's
+development-only guard. Use the disposable-container procedure above with
+`lessonforge-accounts-test` as the run/inspect/stop name and a **fresh container**.
+After health is confirmed and the backend is built, run:
+
+```bash
+CONSTRAINT_TEST_DATABASE_URL='postgresql://lessonforge_constraints:constraint_fixture_only@127.0.0.1:5434/lessonforge_constraints_test' \
+  LESSONFORGE_CONSTRAINT_TEST=disposable npm run test:accounts:db --prefix backend
+```
+
+This dedicated suite never loads `.env` or falls back to `DATABASE_URL`. It checks
+URL acknowledgement, connected database/role identity, and an empty public schema
+before applying the two migrations and writing fixture accounts. It exercises real
+Argon2 persistence, unchanged reruns, role/name conflicts, full rollback, cancellation,
+transaction-time rechecks, a concurrent unique-email insert, and existing-account
+lock retention. Fixture domain/session rows must remain unchanged. Stop only
+`lessonforge-accounts-test` afterward. Each auth/domain/provisioning live suite
+needs its own fresh container; ordinary tests and CI never invoke these suites.
 
 ## Application startup
 

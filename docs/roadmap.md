@@ -47,10 +47,12 @@ backend database connection.
 - [ ] Prepare the exact sample resource text during seeding.
 - [x] Implement the domain models and initial migration; verify isolated constraints.
 - [x] Apply the reviewed migration to the development database as a separate step.
-- [ ] Create sample teacher and administrator accounts.
+- [x] Provision teacher and administrator accounts; unchanged repeat invocation confirmed (developer 2026-10-13).
 - [x] Implement backend sessions, login/me/logout, and authentication/role guards.
-- [ ] Apply the additive Session migration to the development database.
-- [ ] Implement local account provisioning and frontend sign-in.
+- [x] Apply the additive Session migration to the development database (developer confirmed 2026-10-13).
+- [x] Implement safe local account provisioning.
+- [x] Run compiled local account provisioning on `lessonforge_dev`; repeat invocation left both accounts unchanged (developer confirmed 2026-10-13).
+- [ ] Implement frontend sign-in.
 - [ ] Implement transaction-time lesson ownership and workflow permissions.
 - [ ] Browse curriculum resources.
 - [ ] Create, edit, and save lesson drafts.
@@ -185,8 +187,10 @@ confirmed and the initial storage implementation is recorded below.
 
 ## Backend authentication implementation
 
-Step 1 of [authentication design](authentication-design.md) is implemented.
+Steps 1 and 2 of [authentication design](authentication-design.md) are implemented.
 [Authentication verification](authentication-verification.md) distinguishes local
 checks from earlier GitHub results. The applied domain migration is unchanged;
-Session migration application to development, provisioning, frontend sign-in,
-and deployment prerequisites remain separate pending work.
+The developer confirmed both migrations, connectivity, compiled startup, root/me
+responses, prompt shutdown, session cleanup, and an unchanged compiled provisioning
+rerun on `lessonforge_dev` on 2026-10-13. Frontend sign-in and deployment
+prerequisites remain pending.
