@@ -62,8 +62,11 @@ are implemented and tested in a disposable database. On 2026-10-09, the develope
 confirmed migration application to `lessonforge_dev`, up-to-date migration status,
 a successful backend build and compiled API response, and prompt Ctrl+C shutdown.
 Backend session authentication and role guards are implemented with an additive
-Session migration; developer application of that migration, account provisioning,
-frontend sign-in, seeding, lesson workflows, and AI remain pending. See
+Session migration. The developer confirmed both migrations, connectivity, compiled
+startup, expected root/me responses, shutdown, and session cleanup on 2026-10-13.
+Safe local account provisioning is implemented and the developer confirmed an
+unchanged rerun on `lessonforge_dev` on 2026-10-13. Frontend sign-in, seeding,
+lesson workflows, and AI remain pending. See
 `docs/domain-schema.md` and `docs/domain-schema-verification.md`.
 The developer confirmed `Frontend checks`
 and `Backend checks` passed on GitHub and the CI PR was merged into `staging`.
@@ -105,5 +108,5 @@ and PDF export are outside the initial MVP.
 - `docs/ci.md` — CI coverage, commands, limitations, and troubleshooting.
 - `docs/domain-schema.md` — domain storage design and confirmed product decisions.
 - `docs/domain-schema-verification.md` — initial migration and constraint-test evidence.
-- `docs/authentication-design.md` — session design and remaining provisioning/login steps.
+- `docs/authentication-design.md` — session/provisioning design and remaining login step.
 - `docs/authentication-verification.md` — backend authentication checks and remaining gaps.

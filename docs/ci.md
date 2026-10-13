@@ -172,6 +172,10 @@ checks and environment setup outside CI.
 The Session migration and PostgreSQL locking/expiry/rotation/race/cleanup behavior
 are checked only by the explicit disposable `test:auth:db` suite. Ordinary checks
 remain database-free and use no credentials/secrets. No workflow command changed.
+Step-2 provisioning validation, CLI guards, hidden input, cancellation, and cleanup
+run in the ordinary unit suite. Real provisioning persistence/rollback/concurrency
+use the separate `test:accounts:db` command on another fresh guarded disposable
+target. CI never runs that command or the interactive `accounts:provision` CLI.
 See [authentication verification](authentication-verification.md) for current
 local evidence. The developer-confirmed GitHub run above predates this change;
 a GitHub run including the new authentication tests has not yet been reported.

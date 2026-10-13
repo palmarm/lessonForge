@@ -132,11 +132,11 @@ hard-delete paths are planned. Row triggers do not protect against privileged
 DDL, trigger disabling, or `TRUNCATE`; deployment permissions remain future work.
 
 Backend session authentication and role guards are now implemented separately;
-see [authentication verification](authentication-verification.md). Session migration
-application to development, account provisioning, frontend sign-in, lesson
-endpoints, ownership/lifecycle services/concurrency tests, AI, and seeding remain
-pending. Development-database application was verified by the developer
-on 2026-10-09. `test:db` remains the separate read-only development connectivity
+see [authentication verification](authentication-verification.md). The developer
+verified initial development-database application on 2026-10-09 and both migrations
+on 2026-10-13. Safe local account provisioning is implemented; developer execution,
+frontend sign-in, lesson endpoints, ownership/lifecycle services/concurrency tests,
+AI, and seeding remain pending. `test:db` remains the separate read-only development connectivity
 check. Ordinary tests and CI remain
 database-free and never invoke `test:constraints` or migrations. Follow the
 [isolated procedure](development-setup.md#initial-migration-and-isolated-constraint-verification)

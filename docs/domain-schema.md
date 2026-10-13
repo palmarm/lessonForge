@@ -7,8 +7,9 @@ The implementation agent generated the migration offline and tested it only in
 a disposable database. On 2026-10-09, the developer confirmed successful application
 to `lessonforge_dev` and up-to-date migration status. Backend authentication
 is implemented separately in [authentication design](authentication-design.md);
-Session migration application to development, provisioning, frontend sign-in,
-seeding, and workflow services remain pending. The
+Both migrations are developer-confirmed applied as of 2026-10-13. Safe local account
+provisioning is implemented; developer execution, frontend sign-in, seeding, and
+workflow services remain pending. The
 [project specification](project-specification.md) is authoritative, particularly
 sections 2–8. The [architecture](architecture.md) assigns authorization,
 validation, and transactions to NestJS. The [roadmap](roadmap.md) places the manual
@@ -453,8 +454,9 @@ and design first. None is assumed here or needed for the documented MVP.
    constraint tests. The developer also verified development-database application
    on 2026-10-09; ordinary CI tests remain database-free.
 3. Backend password/session authentication and role guards are implemented.
-   Account provisioning, frontend sign-in, and transaction-time ownership checks
-   remain pending. Seed sample resources without production secrets.
+   Safe local account provisioning is implemented separately. Developer execution,
+   frontend sign-in, and transaction-time ownership checks remain pending.
+   Seed sample resources without production secrets.
 4. Implement administrator resource management and teacher draft creation, save,
    source selection, explicit refresh, retirement rules, and conflict handling.
    Test incomplete drafts and unauthorized access before adding submission.

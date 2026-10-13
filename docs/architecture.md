@@ -16,9 +16,11 @@ migration SQL are implemented and verified in a disposable database. On
 2026-10-09, the developer confirmed successful migration application to
 `lessonforge_dev` and up-to-date migration status, backend build and compiled
 startup, an HTTP 200 `GET /` response with body `LessonForge API`, and prompt
-Ctrl+C shutdown. Backend authentication is now implemented separately; the Session
-migration still needs developer application. Account provisioning, frontend
-sign-in, seeding, and workflow services remain pending; see
+Ctrl+C shutdown. Backend authentication and safe local account provisioning are
+implemented separately. On 2026-10-13 the developer confirmed both migrations,
+connectivity, compiled startup, root/me responses, shutdown, and session cleanup.
+The developer confirmed an unchanged provisioning rerun on `lessonforge_dev` on
+2026-10-13. Frontend sign-in, seeding, and workflow services remain pending; see
 [domain verification](domain-schema-verification.md).
 
 ## 1. Technology choices
@@ -132,9 +134,12 @@ The shared HTTP setup enforces exact configured origins and a custom CSRF header
 on unsafe JSON requests. Cookies are HttpOnly, host-only, SameSite=Lax; local HTTP
 is loopback-only and production requires Secure `__Host-` cookies over HTTPS.
 Limiter storage is bounded and process-local; production still needs shared/edge
-limits, trusted ingress, same-site origins, and a cleanup scheduler. Account
-provisioning, frontend sign-in, and transaction-time ownership/workflow enforcement
-remain pending. See [design](authentication-design.md) and
+limits, trusted ingress, same-site origins, and a cleanup scheduler. An explicit
+guarded interactive provisioning CLI creates missing accounts transactionally and
+preserves matching existing accounts. The developer confirmed an unchanged
+compiled rerun on `lessonforge_dev` on 2026-10-13. Frontend sign-in and
+transaction-time ownership/workflow enforcement remain pending. See
+[design](authentication-design.md) and
 [verification](authentication-verification.md).
 
 Protected operations require backend role and ownership checks.
