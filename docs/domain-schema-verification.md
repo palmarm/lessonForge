@@ -110,9 +110,10 @@ After the isolated implementation and review checks above, the developer reporte
 
 These are developer-confirmed results, not checks independently rerun by the
 agent. The historical agent evidence remains accurate: the implementation agent
-did not access or migrate the development database. Authentication, seeding, and
-workflow services remain pending; this run verifies migration application and
-scaffold startup rather than implemented domain workflows.
+did not access or migrate the development database. At that point authentication,
+seeding, and workflow services remained pending; this historical run verifies
+initial migration application and scaffold startup rather than implemented domain
+workflows.
 
 ## Enforcement limits and pending work
 
@@ -130,8 +131,11 @@ draft lesson, and draft JSON resource IDs are not relational FKs. No application
 hard-delete paths are planned. Row triggers do not protect against privileged
 DDL, trigger disabling, or `TRUNCATE`; deployment permissions remain future work.
 
-Authentication, lesson endpoints, lifecycle services/concurrency tests, AI, and
-seeding are pending. Development-database application was verified by the developer
+Backend session authentication and role guards are now implemented separately;
+see [authentication verification](authentication-verification.md). Session migration
+application to development, account provisioning, frontend sign-in, lesson
+endpoints, ownership/lifecycle services/concurrency tests, AI, and seeding remain
+pending. Development-database application was verified by the developer
 on 2026-10-09. `test:db` remains the separate read-only development connectivity
 check. Ordinary tests and CI remain
 database-free and never invoke `test:constraints` or migrations. Follow the

@@ -27,14 +27,19 @@
     "prestart:dev": "npm run prisma:generate",
     "prestart:debug": "npm run prisma:generate",
     "test:db": "vitest run --config ./vitest.config.db.ts",
-    "test:constraints": "vitest run --config ./vitest.config.constraints.ts"
+    "test:constraints": "vitest run --config ./vitest.config.constraints.ts",
+    "sessions:cleanup": "node dist/auth/sessions-cleanup.js",
+    "test:auth:db": "vitest run --config ./vitest.config.auth-db.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
     "@nestjs/core": "^12.0.1",
     "@nestjs/platform-express": "^12.0.1",
+    "@nestjs/throttler": "6.7.1",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "argon2": "0.45.1",
+    "cookie-parser": "1.4.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
@@ -43,6 +48,7 @@
     "@nestjs/mau": "^0.2.6",
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
+    "@types/cookie-parser": "1.4.10",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",

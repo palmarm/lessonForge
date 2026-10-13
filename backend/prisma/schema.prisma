@@ -36,6 +36,7 @@ model User {
 
   lessons Lesson[]
   reviews Review[]
+  sessions Session[]
 }
 
 model CurriculumResource {
@@ -117,4 +118,22 @@ model RevisionSource {
 
   @@id([revisionId, resourceId])
   @@index([resourceId])
+}
+
+// Operational records: expiry/activity/revocation are enforced by NestJS.
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  tokenHash  String   @unique @db.VarChar(64)
+  createdAt  DateTime @db.Timestamptz(6)
+  expiresAt  DateTime @db.Timestamptz(6)
+  lastSeenAt DateTime @db.Timestamptz(6)
+  revokedAt  DateTime? @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@index([lastSeenAt])
+  @@index([revokedAt])
 }

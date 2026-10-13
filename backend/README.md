@@ -12,7 +12,8 @@ for matching Compose and backend credentials, initialization, and persistence.
 
 From `backend/`, `npm run start:dev` generates the client and watches source.
 `npm run build` generates and compiles it; `npm run start:prod` runs `dist/main.js`.
-The schema contains the six [domain models](../docs/domain-schema.md). Generated
+The schema contains the six [domain models](../docs/domain-schema.md) plus
+operational Session storage in a new additive migration. Generated
 source is ignored and excluded from
 formatting and authored-code linting. No migrations are needed for `SELECT 1`.
 
@@ -54,6 +55,24 @@ On 2026-10-09, the developer confirmed the initial migration applied to
 build and compiled startup succeeded. `GET /` returned HTTP 200 with body
 `LessonForge API`; Ctrl+C returned promptly to the shell. See the
 [domain verification evidence](../docs/domain-schema-verification.md) for this
-later developer run and the earlier isolated agent checks. Authentication,
-seeding, workflow services, AI, and deployment remain pending. See the [CI guide](../docs/ci.md)
+later developer run and the earlier isolated agent checks. This run predates the
+Session migration. Backend authentication is now implemented; Session migration
+application to development, provisioning, frontend sign-in, seeding, workflow
+services, AI, and deployment remain pending. See the [CI guide](../docs/ci.md)
 for the developer-confirmed successful workflow; CI remains database-free.
+
+Backend auth endpoints are `POST /auth/login`, `GET /auth/me`, and
+`POST /auth/logout`; `GET /` remains explicitly public. The shared HTTP policy uses
+exact browser origins, JSON/custom-header CSRF checks on unsafe requests, host-only
+HttpOnly cookies, and process-local bounded rate limits. Protected requests use
+fresh PostgreSQL time after session row locks for absolute/idle expiry and activity.
+See [design](../docs/authentication-design.md) and
+[verification](../docs/authentication-verification.md).
+
+`npm run test:auth:db` applies the full migration chain and tests authentication
+only on a fresh disposable target under the same guards as `test:constraints`.
+The two suites require different fresh containers; neither is ordinary CI.
+`npm run sessions:cleanup` explicitly deletes invalid operational session rows
+(up to 10,000) using normal backend configuration after build/migration. It is never
+a startup/CI task. Account provisioning and frontend sign-in remain later steps.
+See [procedures](../docs/development-setup.md#backend-authentication-step-1).

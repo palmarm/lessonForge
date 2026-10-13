@@ -6,7 +6,11 @@ const app = vi.hoisted(() => ({
   close: vi.fn(),
 }));
 const create = vi.hoisted(() => vi.fn());
-vi.mock('@nestjs/core', () => ({ NestFactory: { create } }));
+vi.mock('./auth/auth.http.js', () => ({ configureAuthHttp: vi.fn() }));
+vi.mock('@nestjs/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nestjs/core')>()),
+  NestFactory: { create },
+}));
 vi.mock('./config/environment.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./config/environment.js')>()),
   loadBackendEnvironment: vi.fn(),
@@ -43,6 +47,7 @@ describe('application startup', () => {
     expect(loadBackendEnvironment).toHaveBeenCalledOnce();
     expect(create).toHaveBeenCalledWith(expect.anything(), {
       abortOnError: false,
+      bodyParser: false,
       logger: false,
       forceCloseConnections: true,
     });
@@ -69,6 +74,12 @@ describe('application startup', () => {
   it('rejects invalid PORT before constructing providers', async () => {
     vi.stubEnv('PORT', 'private-invalid-port');
     await expect(startApplication()).rejects.toThrow('PORT must be');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsafe auth configuration before allocating providers', async () => {
+    vi.stubEnv('AUTH_ALLOWED_ORIGINS', '*');
+    await expect(startApplication()).rejects.toThrow('Invalid authentication');
     expect(create).not.toHaveBeenCalled();
   });
 

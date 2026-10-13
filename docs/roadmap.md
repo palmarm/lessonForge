@@ -48,7 +48,10 @@ backend database connection.
 - [x] Implement the domain models and initial migration; verify isolated constraints.
 - [x] Apply the reviewed migration to the development database as a separate step.
 - [ ] Create sample teacher and administrator accounts.
-- [ ] Implement sign-in and backend permissions.
+- [x] Implement backend sessions, login/me/logout, and authentication/role guards.
+- [ ] Apply the additive Session migration to the development database.
+- [ ] Implement local account provisioning and frontend sign-in.
+- [ ] Implement transaction-time lesson ownership and workflow permissions.
 - [ ] Browse curriculum resources.
 - [ ] Create, edit, and save lesson drafts.
 - [ ] Validate lessons before submission.
@@ -177,4 +180,13 @@ confirmed and the initial storage implementation is recorded below.
   returned promptly to the shell.
 - Authentication, lesson endpoints, lifecycle transactions, AI, and
   account/resource seeding remain pending. Next: implement setup-created accounts,
-  authentication, and backend permissions.
+  authentication, and backend permissions. This records the historical domain
+  milestone; current backend authentication status is below.
+
+## Backend authentication implementation
+
+Step 1 of [authentication design](authentication-design.md) is implemented.
+[Authentication verification](authentication-verification.md) distinguishes local
+checks from earlier GitHub results. The applied domain migration is unchanged;
+Session migration application to development, provisioning, frontend sign-in,
+and deployment prerequisites remain separate pending work.

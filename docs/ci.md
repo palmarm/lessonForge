@@ -79,10 +79,12 @@ missing `backend/.env`; generation requires no database URL. Unit tests use fake
 and HTTP tests replace database access and mock environment loading where needed.
 No PostgreSQL service, repository secrets, or real credentials are needed.
 
-The workflow never invokes `test:db`, `test:constraints`, migrations, Docker
-Compose, API startup, or deployment. HTTP end-to-end tests cover the scaffold and shutdown behavior with
-substituted database access; they do not prove live database connectivity or
-domain workflows. Live database evidence remains in the
+The workflow never invokes `test:db`, `test:constraints`, `test:auth:db`, session
+cleanup, migrations, Docker Compose, API startup, or deployment. HTTP end-to-end
+tests cover the scaffold, real authentication/role guards, cookie handling,
+exact-origin CORS/CSRF, rate limits, and shutdown with substituted database access.
+Unit tests include real native Argon2 hash/verify. They do not prove live database
+connectivity or domain workflows. Live database evidence remains in the
 [database-foundation verification guide](database-foundation-verification.md).
 Initial domain migration enforcement is checked separately against a disposable
 database; see [domain verification](domain-schema-verification.md). Generation
@@ -164,3 +166,13 @@ The agent does not run dependency installation commands for this task.
 
 See the [development setup guide](development-setup.md#checks) for local application
 checks and environment setup outside CI.
+
+## Backend authentication coverage
+
+The Session migration and PostgreSQL locking/expiry/rotation/race/cleanup behavior
+are checked only by the explicit disposable `test:auth:db` suite. Ordinary checks
+remain database-free and use no credentials/secrets. No workflow command changed.
+See [authentication verification](authentication-verification.md) for current
+local evidence. The developer-confirmed GitHub run above predates this change;
+a GitHub run including the new authentication tests has not yet been reported.
+No separate clean `npm ci` or actionlint result is claimed.
