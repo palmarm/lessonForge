@@ -454,8 +454,10 @@ and design first. None is assumed here or needed for the documented MVP.
    constraint tests. The developer also verified development-database application
    on 2026-10-09; ordinary CI tests remain database-free.
 3. Backend password/session authentication and role guards are implemented.
-   Safe local account provisioning is implemented separately. Developer execution,
-   frontend sign-in, and transaction-time ownership checks remain pending.
+   Safe local account provisioning and frontend login/current-user handling are
+   implemented separately. The developer confirmed an unchanged provisioning
+   rerun on 2026-10-13; browser verification and transaction-time ownership checks
+   remain pending.
    Seed sample resources without production secrets.
 4. Implement administrator resource management and teacher draft creation, save,
    source selection, explicit refresh, retirement rules, and conflict handling.

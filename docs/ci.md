@@ -49,11 +49,16 @@ After `npm ci`, `Frontend checks` runs from `frontend/`:
 ```bash
 npm run lint
 npm run typecheck
+npm test
 npm run build
 ```
 
-`typecheck` generates Next.js route types before TypeScript checks. The existing
-production build uses Turbopack and fetches Google Fonts when uncached.
+`typecheck` generates Next.js route types before TypeScript checks. Node 24's
+built-in runner tests the browser API and session state with mocked fetch;
+no browser, database, or additional test package is required. CI provides the
+public fixture origin `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`; builds do
+not contact that API. The existing production build uses Turbopack and fetches
+Google Fonts when uncached.
 
 After `npm ci`, `Backend checks` runs from `backend/`:
 

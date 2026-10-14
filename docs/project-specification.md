@@ -135,7 +135,8 @@ development-database application on 2026-10-09. Backend session authentication
 and role guards are implemented separately; both migrations are developer-confirmed
 applied as of 2026-10-13. Safe local account provisioning is implemented, and the
 developer confirmed an unchanged compiled rerun on `lessonforge_dev` on 2026-10-13.
-Frontend sign-in, seeding, and workflow services remain pending. See
+Frontend sign-in/current-user handling is implemented; browser verification,
+seeding, and workflow services remain pending. See
 [domain verification](domain-schema-verification.md) for the storage checks.
 
 ## 9. Acceptance criteria

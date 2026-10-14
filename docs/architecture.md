@@ -20,7 +20,8 @@ Ctrl+C shutdown. Backend authentication and safe local account provisioning are
 implemented separately. On 2026-10-13 the developer confirmed both migrations,
 connectivity, compiled startup, root/me responses, shutdown, and session cleanup.
 The developer confirmed an unchanged provisioning rerun on `lessonforge_dev` on
-2026-10-13. Frontend sign-in, seeding, and workflow services remain pending; see
+2026-10-13. Frontend sign-in/current-user handling is implemented; browser
+verification, seeding, and workflow services remain pending; see
 [domain verification](domain-schema-verification.md).
 
 ## 1. Technology choices
@@ -137,8 +138,19 @@ Limiter storage is bounded and process-local; production still needs shared/edge
 limits, trusted ingress, same-site origins, and a cleanup scheduler. An explicit
 guarded interactive provisioning CLI creates missing accounts transactionally and
 preserves matching existing accounts. The developer confirmed an unchanged
-compiled rerun on `lessonforge_dev` on 2026-10-13. Frontend sign-in and
-transaction-time ownership/workflow enforcement remain pending. See
+compiled rerun on `lessonforge_dev` on 2026-10-13. The frontend uses a Client
+Component provider to restore identity through `/auth/me`, submit login, and
+confirm logout. Its fixed public API origin is validated before credentialed
+requests, with the required CSRF header on writes and runtime response validation.
+Only confirmed 401 or successful logout clears identity; other logout failures
+retain the last confirmed account and offer retry. A shared 15-second request
+deadline covers headers and complete success-body consumption; timeout aborts
+the request and is an availability error. Login timeout permits session
+reconciliation without automatic retry. Older reads cannot overwrite
+newer actions, and cookie-changing requests cannot overlap. Server Components
+render a public shell without cookie forwarding or personalized caching.
+Browser verification and transaction-time ownership/workflow enforcement remain
+pending. See [frontend verification](frontend-authentication-verification.md),
 [design](authentication-design.md) and
 [verification](authentication-verification.md).
 
@@ -202,8 +214,10 @@ Current setup:
 - Next.js defaults to port 3000; NestJS defaults to port 3001.
 - The backend validates an optional shell `PORT` override before creating the app:
   only decimal integers from 1 to 65535 are accepted.
-- `GET /` returns `LessonForge API`; the frontend displays a minimal LessonForge heading.
-- Frontend-to-API communication and origin configuration will be added when needed.
+- `GET /` returns `LessonForge API`; the frontend displays the LessonForge public
+  shell and browser login/current-account interface.
+- The browser calls NestJS directly using `NEXT_PUBLIC_API_BASE_URL`; no Next.js
+  API proxy or server-side identity fetch is introduced.
 - PostgreSQL uses root `compose.yaml`, pinned to `postgres:17.11-bookworm`,
   published on `127.0.0.1:5433`, with a named volume and readiness health check.
   PostgreSQL and the health check use port `5432` inside the container.
