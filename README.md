@@ -65,9 +65,14 @@ Backend session authentication and role guards are implemented with an additive
 Session migration. The developer confirmed both migrations, connectivity, compiled
 startup, expected root/me responses, shutdown, and session cleanup on 2026-10-13.
 Safe local account provisioning is implemented and the developer confirmed an
-unchanged rerun on `lessonforge_dev` on 2026-10-13. Frontend sign-in, seeding,
-lesson workflows, and AI remain pending. See
+unchanged rerun on `lessonforge_dev` on 2026-10-13. Frontend login/logout and
+current-user handling are implemented. The developer confirmed teacher/admin
+browser login, refresh, logout, and incorrect-password rejection on 2026-10-14;
+outage, cookie, CORS/CSRF, HTTPS, and component-rendering checks remain pending.
+Seeding, lesson workflows, and AI remain pending. See
 `docs/domain-schema.md` and `docs/domain-schema-verification.md`.
+See `docs/frontend-authentication-verification.md` for frontend checks and the
+manual browser checklist.
 The developer confirmed `Frontend checks`
 and `Backend checks` passed on GitHub and the CI PR was merged into `staging`.
 Saved protection rules for `staging` and `main` require both checks and up-to-date
@@ -108,5 +113,6 @@ and PDF export are outside the initial MVP.
 - `docs/ci.md` — CI coverage, commands, limitations, and troubleshooting.
 - `docs/domain-schema.md` — domain storage design and confirmed product decisions.
 - `docs/domain-schema-verification.md` — initial migration and constraint-test evidence.
-- `docs/authentication-design.md` — session/provisioning design and remaining login step.
+- `docs/authentication-design.md` — session, provisioning, and browser authentication design.
 - `docs/authentication-verification.md` — backend authentication checks and remaining gaps.
+- `docs/frontend-authentication-verification.md` — frontend checks, startup, and browser checklist.

@@ -2,10 +2,12 @@
 
 ## Authority and status
 
-This design was finalized on 2026-10-09. Steps 1 (backend authentication) and 2
-(safe local account provisioning) are now implemented;
+This design was finalized on 2026-10-09. Steps 1 (backend authentication), 2
+(safe local account provisioning), and 3 (browser login/current-user handling)
+are implemented;
 [authentication verification](authentication-verification.md) records
-actual checks and remaining gaps. The Next.js interface remains planned step 3.
+backend checks, and [frontend verification](frontend-authentication-verification.md)
+records frontend checks and the pending browser checklist.
 The [specification](project-specification.md), [architecture](architecture.md),
 [domain design](domain-schema.md), and existing Prisma schema remain authoritative.
 The confirmed authentication decision is PostgreSQL-backed opaque sessions in an
@@ -21,7 +23,8 @@ and unauthenticated me responses, prompt shutdown, and successful explicit sessi
 cleanup. The API exposes login/me/logout and default/role guards. The developer
 also confirmed a compiled provisioning rerun on `lessonforge_dev` on 2026-10-13:
 both accounts were unchanged and no password prompts appeared. The Next.js page
-still has no login interface or API client. Frontend sign-in, seeding,
+now has a browser login/logout interface and current-user provider; its Server
+Components render only a public shell. Browser verification, seeding,
 ownership/workflow services, and AI remain pending.
 
 Historical planning evidence: the earlier design task installed nothing, created
@@ -613,8 +616,7 @@ has adopted eight-hour absolute expiry, 30-minute idle expiry, concurrent-device
 sessions, and current-session-only logout for the MVP. The activity semantics,
 monotonic updates, fresh post-lock expiry checks, and race-test requirements above
 are part of the finalized plan. Exact sample account details are entered during
-provisioning; deployment and the remaining provisioning/interface work still need
-verification.
+provisioning; deployment and browser behavior still need verification.
 Deployment still needs chosen UI/API origins under a controlled same-site domain,
 trusted ingress configuration, shared login limiting, and a cleanup scheduler.
 Unrelated-domain hosting or all-devices logout would need an explicit design

@@ -40,6 +40,7 @@ files do not already exist:
 ```bash
 cp -n .env.example .env
 cp -n backend/.env.example backend/.env
+cp -n frontend/.env.example frontend/.env.local
 ```
 
 These commands create ignored configuration files. Before first database startup,
@@ -62,6 +63,14 @@ of the current directory. They do not read root `.env`. Existing shell variables
 win over file values. Missing backend files are allowed when the shell supplies
 configuration; other file-loading errors stop startup. Never put database
 credentials in frontend configuration or commit local environment files.
+
+Frontend `.env.local` contains only `NEXT_PUBLIC_API_BASE_URL`, normally
+`http://localhost:3001`. It is a public origin, embedded into the browser bundle
+at build time. Use an exact HTTP loopback or HTTPS origin without credentials,
+path, query, fragment, or trailing slash. Restart development after changing it;
+rebuild before changing a deployed origin. The frontend never loads root or
+backend environment files. Use `localhost` for both browser applications; do not
+mix it with `127.0.0.1`.
 
 `DATABASE_URL` is required for API startup. It must contain a PostgreSQL protocol,
 host, valid port (if supplied), database, username, and password. URL query options
@@ -211,8 +220,9 @@ That developer run predates the additive Session migration. On 2026-10-13 the
 developer separately confirmed both migrations applied, up-to-date Prisma status
 (exit 0), development connectivity, build/compiled startup, the expected root/me
 responses, prompt Ctrl+C, and session cleanup deleting zero invalid records (exit 0).
-Local account provisioning is implemented below; developer execution, frontend
-sign-in, seeding, and workflow services remain pending.
+The developer confirmed an unchanged provisioning rerun on 2026-10-13. Frontend
+login/current-user handling is implemented; manual browser verification,
+seeding, and workflow services remain pending.
 
 Applying tracked migrations is still a separate manual step for a newly
 initialized development database; Compose and API startup do not apply them.
@@ -238,7 +248,8 @@ Other routes require authentication unless explicitly public; `GET /` stays publ
 The new `20261009000000_add_sessions` migration must be reviewed/applied with the
 manual migration command above before using sessions. No account is created by
 migration, build, or startup. Safe local account provisioning is available as step 2
-below; frontend login remains step 3.
+below; step 3 implements the browser login/logout interface and current-user
+handling. See [frontend verification](frontend-authentication-verification.md).
 
 Existing ignored backend environment files are not automatically rewritten. Add
 these nonsecret settings yourself if needed (they are also the local defaults):
@@ -375,7 +386,11 @@ Run the applications in separate terminals from the repository root:
 npm run dev --prefix frontend
 ```
 
-Next.js serves the Tailwind-styled LessonForge page at `http://localhost:3000`.
+Next.js serves the Tailwind login/current-account interface at
+`http://localhost:3000`. The browser restores identity directly through NestJS
+`GET /auth/me` after loading the public shell. Follow the
+[browser checklist](frontend-authentication-verification.md#manual-browser-checklist)
+to verify the provisioned accounts and cookie/CORS/CSRF behavior.
 
 ```bash
 npm run start:dev --prefix backend
@@ -414,6 +429,7 @@ Run frontend verification from `frontend/`:
 ```bash
 npm run lint
 npm run typecheck
+npm test
 npm run build
 ```
 
@@ -434,8 +450,11 @@ route types before running TypeScript, so it works before the first development
 server or build. Type checks do not emit JavaScript.
 Builds generate `.next/` for the frontend and `dist/` for the backend.
 Backend tests run once: `npm test` runs unit tests, and `test:e2e` exercises the HTTP
-endpoint. End-to-end tests require permission to bind a local port. The frontend
-build's existing Google Fonts integration requires network access on an uncached build.
+endpoint. End-to-end tests require permission to bind a local port. Frontend
+`npm test` uses Node 24's built-in runner and TypeScript stripping for mocked-fetch
+API/session tests; it requires no new packages, environment files, or database.
+The frontend build's existing Google Fonts integration requires network access
+on an uncached build.
 
 ### Explicit live database check
 

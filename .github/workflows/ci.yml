@@ -27,6 +27,7 @@ jobs:
         working-directory: frontend
     env:
       NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3001'
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,6 +45,8 @@ jobs:
         run: npm run lint
       - name: Check types
         run: npm run typecheck
+      - name: Run frontend authentication tests
+        run: npm test
       - name: Build production frontend
         run: npm run build
 

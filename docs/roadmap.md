@@ -52,7 +52,9 @@ backend database connection.
 - [x] Apply the additive Session migration to the development database (developer confirmed 2026-10-13).
 - [x] Implement safe local account provisioning.
 - [x] Run compiled local account provisioning on `lessonforge_dev`; repeat invocation left both accounts unchanged (developer confirmed 2026-10-13).
-- [ ] Implement frontend sign-in.
+- [x] Implement frontend login/logout and current-user handling.
+- [x] Verify teacher/admin browser login, refresh, logout, and incorrect-password rejection (developer confirmed 2026-10-14).
+- [ ] Verify browser outage recovery, cookie attributes, CORS/CSRF, HTTPS, and component rendering.
 - [ ] Implement transaction-time lesson ownership and workflow permissions.
 - [ ] Browse curriculum resources.
 - [ ] Create, edit, and save lesson drafts.
@@ -185,12 +187,16 @@ confirmed and the initial storage implementation is recorded below.
   authentication, and backend permissions. This records the historical domain
   milestone; current backend authentication status is below.
 
-## Backend authentication implementation
+## Authentication implementation
 
-Steps 1 and 2 of [authentication design](authentication-design.md) are implemented.
+Steps 1–3 of [authentication design](authentication-design.md) are implemented.
 [Authentication verification](authentication-verification.md) distinguishes local
-checks from earlier GitHub results. The applied domain migration is unchanged;
+checks from earlier GitHub results. The applied domain migration is unchanged.
 The developer confirmed both migrations, connectivity, compiled startup, root/me
 responses, prompt shutdown, session cleanup, and an unchanged compiled provisioning
-rerun on `lessonforge_dev` on 2026-10-13. Frontend sign-in and deployment
-prerequisites remain pending.
+rerun on `lessonforge_dev` on 2026-10-13. Frontend login/logout and current-user
+handling were implemented on 2026-10-14; the developer confirmed teacher/admin
+browser login, refresh, logout, and incorrect-password rejection that day. See
+[frontend verification](frontend-authentication-verification.md) for automated
+checks and the pending manual browser checklist. Deployment prerequisites remain
+pending.

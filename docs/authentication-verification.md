@@ -5,7 +5,9 @@
 Step 1 of [authentication design](authentication-design.md) implements backend
 sessions, login/me/logout, default authentication/role guards, cookie/CORS/CSRF
 policy, bounded rate/KDF work, and an explicit cleanup CLI. Step 2 adds guarded
-local account provisioning; the Next.js login interface remains step 3.
+local account provisioning. Step 3 implements the Next.js login/current-user
+interface; [frontend verification](frontend-authentication-verification.md) records
+its checks and pending manual browser verification.
 Ownership and workflow services,
 seeding, password recovery, and AI are not implemented here.
 
@@ -436,7 +438,9 @@ The developer ran the compiled `accounts:provision` CLI against
 reported `Teacher account: unchanged.` and `Administrator account: unchanged.`
 No password prompts appeared on this rerun. This confirms only the reported
 unchanged outcomes; no password values or successful login are established by
-this run. Frontend login remains pending.
+this run. Frontend login was pending at the time of this developer run; step 3
+implementation and its separate checks are recorded in
+[frontend verification](frontend-authentication-verification.md).
 
 Developer-confirmed verification on 2026-10-13 is recorded separately from agent
 checks: both migrations applied; Prisma status up to date with exit 0; development
@@ -500,6 +504,7 @@ cookie and CSRF behavior; realistic KDF latency/memory benchmarking and native
 KDF shutdown latency under active/queued hashing work. Neither latency measurement
 has been performed; lifecycle/drain-order regression tests are not such a measurement.
 The developer has now executed the cleanup CLI as recorded above. Frontend
-login is a pending implementation. Public deployment
+login/current-user handling is implemented; manual browser verification remains
+pending. Public deployment
 also requires selected HTTPS same-site origins, trusted proxy/ingress policy,
 shared/edge rate limiting, and an hourly cleanup scheduler.
