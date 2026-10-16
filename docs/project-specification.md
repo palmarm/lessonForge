@@ -135,8 +135,10 @@ development-database application on 2026-10-09. Backend session authentication
 and role guards are implemented separately; both migrations are developer-confirmed
 applied as of 2026-10-13. Safe local account provisioning is implemented, and the
 developer confirmed an unchanged compiled rerun on `lessonforge_dev` on 2026-10-13.
-Frontend sign-in/current-user handling is implemented; browser verification,
-seeding, and workflow services remain pending. See
+Frontend sign-in/current-user handling is implemented. Basic browser authentication
+and API-outage recovery are developer-confirmed; remaining browser checks are
+tracked in [frontend verification](frontend-authentication-verification.md). Resource
+seeding and workflow services remain pending. See
 [domain verification](domain-schema-verification.md) for the storage checks.
 
 ## 9. Acceptance criteria
@@ -153,7 +155,7 @@ The MVP is complete when:
 8. AI generates validated, editable drafts from selected material.
 9. AI failures preserve saved work and allow manual continuation.
 10. Conflicting requests do not silently overwrite content or decisions.
-11. The main workflow works in a deployed application.
+11. The manual workflow and AI drafting addition work in a deployed application.
 12. The repository includes setup instructions, automated checks, and a short demonstration.
 
 ## 10. Deferred features
@@ -167,7 +169,28 @@ The MVP is complete when:
 
 ## 11. Delivery approach
 
-Build the manual workflow before AI integration.
+Follow the developer-approved sequence:
+
+1. Curriculum resource management and teacher browsing.
+2. Teacher drafts, resource selection/snapshots, saving, and validation.
+3. Submission, review, resubmission, approved library, and copying.
+4. First restricted staging deployment of the complete manual workflow.
+5. AI drafting, followed by deployment of that addition.
+6. Portfolio demonstration and documentation.
+
+AI remains part of the intended MVP and all acceptance criteria above still apply.
+The first manual-workflow deployment is an intermediate milestone. It does not
+complete the full MVP or establish public production readiness.
+
+Containerization, hosting evaluation, and deployment preparation may proceed
+alongside feature development. Before opening restricted staging to designated
+testers, verify HTTPS/cookies and CORS/CSRF, appropriate runtime and migration
+database roles, secret handling, migration and recovery procedures, backups and
+restoration, sanitized useful logs, health checks, and deployment-specific session,
+proxy, and rate-limit configuration. The [roadmap](roadmap.md#4-first-restricted-staging-deployment)
+tracks these prerequisites; the [architecture](architecture.md#9-verification-and-delivery)
+records their technical boundaries. Public production access requires a separate
+readiness review; restricted staging access is not a substitute for that review.
 
 Each milestone should produce a working demonstration and
 a Git contribution that the developer can explain independently.

@@ -20,8 +20,10 @@ Ctrl+C shutdown. Backend authentication and safe local account provisioning are
 implemented separately. On 2026-10-13 the developer confirmed both migrations,
 connectivity, compiled startup, root/me responses, shutdown, and session cleanup.
 The developer confirmed an unchanged provisioning rerun on `lessonforge_dev` on
-2026-10-13. Frontend sign-in/current-user handling is implemented; browser
-verification, seeding, and workflow services remain pending; see
+2026-10-13. Frontend sign-in/current-user handling is implemented. Basic browser
+authentication and API-outage recovery are developer-confirmed; remaining browser checks are in
+[frontend verification](frontend-authentication-verification.md). Resource seeding
+and workflow services remain pending; see
 [domain verification](domain-schema-verification.md).
 
 ## 1. Technology choices
@@ -37,7 +39,7 @@ verification, seeding, and workflow services remain pending; see
 | Local infrastructure | Docker Compose |
 | Automation | GitHub Actions |
 | AI provider | Selected at the AI milestone |
-| Hosting | Selected at the deployment milestone |
+| Hosting | Evaluated alongside features; selected before restricted staging |
 
 The Node.js version is recorded in the root `.nvmrc`.
 The frontend uses Next.js 16.3.8 and Tailwind CSS 4.3.3. The backend installed
@@ -99,7 +101,8 @@ This can interrupt in-flight HTTP requests; database cleanup is still awaited.
 Only the NestJS backend connects to the database.
 
 Migration files are reviewed and committed.
-Production schema changes use the migration deployment process for the selected Prisma version.
+Staging and production schema changes use the migration deployment process for
+the selected Prisma version.
 
 Prisma does not replace authorization, runtime validation,
 transaction design, or concurrency controls.
@@ -134,9 +137,9 @@ rate limits. Cleanup is an explicit bounded CLI, never an automatic startup task
 The shared HTTP setup enforces exact configured origins and a custom CSRF header
 on unsafe JSON requests. Cookies are HttpOnly, host-only, SameSite=Lax; local HTTP
 is loopback-only and production requires Secure `__Host-` cookies over HTTPS.
-Limiter storage is bounded and process-local; production still needs shared/edge
-limits, trusted ingress, same-site origins, and a cleanup scheduler. An explicit
-guarded interactive provisioning CLI creates missing accounts transactionally and
+Limiter storage is bounded and process-local; restricted staging and production
+still need shared/edge limits, trusted ingress, same-site origins, and a cleanup
+scheduler. An explicit guarded interactive provisioning CLI creates missing accounts transactionally and
 preserves matching existing accounts. The developer confirmed an unchanged
 compiled rerun on `lessonforge_dev` on 2026-10-13. The frontend uses a Client
 Component provider to restore identity through `/auth/me`, submit login, and
@@ -149,8 +152,10 @@ the request and is an availability error. Login timeout permits session
 reconciliation without automatic retry. Older reads cannot overwrite
 newer actions, and cookie-changing requests cannot overlap. Server Components
 render a public shell without cookie forwarding or personalized caching.
-Browser verification and transaction-time ownership/workflow enforcement remain
-pending. See [frontend verification](frontend-authentication-verification.md),
+Basic browser authentication and API-outage recovery are developer-confirmed.
+Cookie, CORS/CSRF, HTTPS, component-rendering, and accessibility checks remain
+pending, as does transaction-time ownership/workflow enforcement. See
+[frontend verification](frontend-authentication-verification.md),
 [design](authentication-design.md) and
 [verification](authentication-verification.md).
 
@@ -232,7 +237,8 @@ Ordinary tests substitute database access; explicit `test:db` accepts only
 `127.0.0.1:5433/lessonforge_dev` without query parameters and makes no writes.
 See the [development setup guide](development-setup.md#docker-and-postgresql)
 for first-start initialization and named-volume persistence.
-Application containers will be introduced after the basic workflow works.
+Application containerization and hosting preparation may proceed alongside feature
+development; they need not wait for the manual workflow to be complete.
 
 ## 8. Configuration
 
@@ -268,7 +274,42 @@ Add checks incrementally:
 - PostgreSQL integration tests for critical data behavior.
 - Browser tests for the main teacher and administrator workflow.
 
-Deployment will include an explicit migration step, health checks, and useful logs without credentials or sensitive content.
+Delivery follows resources and teacher browsing, then drafts with trusted resource
+snapshots, saving and validation, then submission/review/resubmission and approved
+library browsing/copying. Deploy that complete manual workflow first to restricted
+staging. Add AI drafting next and deploy that addition before the portfolio
+demonstration. AI remains required for the full MVP; the first deployment is an
+intermediate milestone. See the [roadmap](roadmap.md) and
+[MVP acceptance criteria](project-specification.md#9-acceptance-criteria).
+
+Containerization, hosting evaluation, and operational preparation can run alongside
+features. Before opening staging to designated testers:
+
+- Restrict access to the designated testers and use separate staging data/configuration.
+- Verify HTTPS with Secure `__Host-` cookies, exact same-site origins, credentialed
+  CORS/preflights, CSRF rejection, and browser session behavior on the chosen topology.
+- Configure trusted ingress/proxy handling, shared/edge rate limiting, session
+  expiry and hourly cleanup; verify limits and password-hashing performance on the host.
+- Separate a least-privilege runtime database role from the migration/owner role.
+  Verify runtime permissions cannot bypass immutable-row protections through DDL,
+  trigger disabling, or TRUNCATE; the local superuser configuration is unsuitable.
+- Keep secrets in the host's secret configuration, out of images, browser bundles,
+  source control, and logs. Provide only public API configuration to Next.js.
+- Rehearse reviewed migration deployment, release ordering, and failure recovery.
+  Preserve applied migrations and shared data; use separate migration credentials.
+- Configure backups and demonstrate restoration into a separate database.
+- Provide health/readiness checks and useful sanitized logs without credentials,
+  session tokens, or sensitive lesson content, plus an operational failure procedure.
+- Verify the deployed manual workflow, permissions, validation, concurrency,
+  retained revisions/snapshots, and approved-lesson copying; record evidence and gaps.
+
+Deploy the later AI addition with backend-only provider credentials, generation
+limits/timeouts, output validation, and failure recovery; recheck the manual
+workflow. Neither AI nor deployment changes the administrator-only approval rule.
+Restricted staging access does not establish public production readiness. Public
+access requires a separate security, operations, capacity, and verification review.
+The [staging checklist](roadmap.md#4-first-restricted-staging-deployment) tracks the
+pending delivery work; these requirements are not claims of completed verification.
 
 ## 10. Repository layout
 
