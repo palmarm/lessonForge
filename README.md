@@ -68,7 +68,8 @@ Safe local account provisioning is implemented and the developer confirmed an
 unchanged rerun on `lessonforge_dev` on 2026-10-13. Frontend login/logout and
 current-user handling are implemented. The developer confirmed teacher/admin
 browser login, refresh, logout, and incorrect-password rejection on 2026-10-14;
-outage, cookie, CORS/CSRF, HTTPS, and component-rendering checks remain pending.
+browser API-outage recovery was confirmed separately. Cookie, CORS/CSRF, HTTPS,
+component-rendering, and accessibility checks remain pending.
 Seeding, lesson workflows, and AI remain pending. See
 `docs/domain-schema.md` and `docs/domain-schema-verification.md`.
 See `docs/frontend-authentication-verification.md` for frontend checks and the
