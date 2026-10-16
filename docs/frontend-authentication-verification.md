@@ -150,6 +150,17 @@ cookie values, or unreported status codes are recorded.
 This report predates the deadline follow-up and does not verify timeout recovery
 in a browser.
 
+## Confirmed browser outage recovery
+
+The developer separately confirmed browser API-outage recovery. This confirmation
+updates the earlier pending status above; it does not establish the cause of the
+earlier loading incident or verify every timeout, 503, or failed-logout variant in
+the checklist. No additional status codes or inspection results are claimed.
+
+Cookie attributes, CORS/CSRF/preflights, HTTPS, component rendering, and
+keyboard/screen-reader checks remain unverified. Local outage recovery is also
+separate from verification on the eventual restricted staging deployment.
+
 ## Exact local startup
 
 Use the existing configured and migrated development database and provisioned
@@ -205,10 +216,10 @@ files during its commands.
 
 ## Manual browser checklist
 
-Basic login, refresh, logout, and incorrect-password rejection are confirmed in
-the developer record above. Other assertions within these checklist items remain
-**pending**, including inspection details bundled with those flows. Use your
-provisioned account details privately. Record
+Basic login, refresh, logout, incorrect-password rejection, and separately reported
+API-outage recovery are confirmed in the developer records above. Other assertions
+within these checklist items remain **pending**, including inspection details
+bundled with those flows. Use your provisioned account details privately. Record
 roles, status codes, and outcomes only; do not share passwords, cookie values,
 request bodies, or an unredacted Network export.
 
@@ -275,7 +286,8 @@ request bodies, or an unredacted Network export.
 ## Remaining evidence
 
 Actual cookie attributes/preflights, CORS/CSRF and HTTPS behavior, component
-rendering, keyboard and screen-reader interaction, API outage recovery, and a GitHub Actions run
-containing these frontend tests require developer verification. Backend deployment
+rendering, keyboard and screen-reader interaction, outage/timeout variants beyond
+the separate confirmation above, and a GitHub Actions run containing these
+frontend tests require developer verification. Backend deployment
 origins, HTTPS, proxy trust, shared limiting, cleanup scheduling, and KDF performance
 remain as documented in [backend verification](authentication-verification.md).

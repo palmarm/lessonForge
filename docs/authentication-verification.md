@@ -504,7 +504,10 @@ cookie and CSRF behavior; realistic KDF latency/memory benchmarking and native
 KDF shutdown latency under active/queued hashing work. Neither latency measurement
 has been performed; lifecycle/drain-order regression tests are not such a measurement.
 The developer has now executed the cleanup CLI as recorded above. Frontend
-login/current-user handling is implemented; manual browser verification remains
-pending. Public deployment
-also requires selected HTTPS same-site origins, trusted proxy/ingress policy,
-shared/edge rate limiting, and an hourly cleanup scheduler.
+login/current-user handling is implemented. Basic browser authentication and
+API-outage recovery are developer-confirmed; remaining browser checks are tracked
+in [frontend verification](frontend-authentication-verification.md). Restricted
+staging as well as public deployment requires selected HTTPS same-site origins,
+trusted proxy/ingress policy, shared/edge rate limiting, and an hourly cleanup
+scheduler. See the [staging prerequisites](roadmap.md#4-first-restricted-staging-deployment);
+restricted staging does not establish public production readiness.
