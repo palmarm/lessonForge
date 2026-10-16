@@ -45,7 +45,7 @@ jobs:
         run: npm run lint
       - name: Check types
         run: npm run typecheck
-      - name: Run frontend authentication tests
+      - name: Run frontend request and state tests
         run: npm test
       - name: Build production frontend
         run: npm run build

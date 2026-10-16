@@ -8,8 +8,10 @@ a disposable database. On 2026-10-09, the developer confirmed successful applica
 to `lessonforge_dev` and up-to-date migration status. Backend authentication
 is implemented separately in [authentication design](authentication-design.md);
 Both migrations are developer-confirmed applied as of 2026-10-13. Safe local account
-provisioning is implemented; developer execution, frontend sign-in, seeding, and
-workflow services remain pending. The
+provisioning and frontend sign-in are implemented; developer authentication evidence
+is recorded separately. Curriculum resource management/browsing is implemented in
+[resource contracts](curriculum-resources.md); seeding and lesson workflow services
+remain pending. The
 [project specification](project-specification.md) is authoritative, particularly
 sections 2–8. The [architecture](architecture.md) assigns authorization,
 validation, and transactions to NestJS. The [roadmap](roadmap.md) places the manual
@@ -111,6 +113,11 @@ snapshots. An owning teacher may explicitly refresh a selected resource to its
 latest active version; NestJS captures the replacement snapshot. Refreshing a
 retired resource is rejected without replacing the existing snapshot. Submitted
 snapshots remain immutable.
+
+Resource endpoints now implement administrator create/view/edit/retire and active-only
+teacher browsing. Retired records are read-only; current-version repeated retirement
+returns unchanged state, while stale versions conflict. Text limits, request/response
+contracts, and verification are in the [resource guide](curriculum-resources.md).
 
 ### Lesson
 
@@ -456,11 +463,13 @@ and design first. None is assumed here or needed for the documented MVP.
 3. Backend password/session authentication and role guards are implemented.
    Safe local account provisioning and frontend login/current-user handling are
    implemented separately. The developer confirmed an unchanged provisioning
-   rerun on 2026-10-13; browser verification and transaction-time ownership checks
-   remain pending.
-   Seed sample resources without production secrets.
-4. Implement administrator resource management and teacher draft creation, save,
-   source selection, explicit refresh, retirement rules, and conflict handling.
+   rerun on 2026-10-13. Basic browser authentication and outage recovery are confirmed;
+   remaining browser checks and transaction-time lesson ownership checks remain pending.
+   Original sample resource text is now documented for manual administrator entry;
+   no development seeding was performed.
+4. Administrator resource management/browsing, retirement rules, and resource
+   conflict handling are implemented. Next implement teacher draft creation, save,
+   source selection, and explicit refresh.
    Test incomplete drafts and unauthorized access before adding submission.
 5. Implement validated submission, immutable revisions/sources, history retrieval,
    and pending-review queries in transactions.

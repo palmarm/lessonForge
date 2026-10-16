@@ -162,7 +162,7 @@ test("login and me reject malformed successful responses", async () => {
   }
 });
 
-test("401 is confirmed unauthenticated; 503 and network failures remain availability errors", async () => {
+test("401 is confirmed unauthenticated; mutation server failures and network failures are availability errors", async () => {
   for (const action of ["me", "login", "logout"]) {
     for (const [status, reason] of [
       [401, "unauthenticated"],
@@ -170,7 +170,9 @@ test("401 is confirmed unauthenticated; 503 and network failures remain availabi
       [403, "rejected"],
       [429, "rejected"],
       [400, "rejected"],
-      [500, "rejected"],
+      [500, action === "me" ? "rejected" : "unavailable"],
+      [502, action === "me" ? "rejected" : "unavailable"],
+      [504, action === "me" ? "rejected" : "unavailable"],
     ]) {
       const api = createAuthApi("http://localhost:3001", async () =>
         json({ message: "untrusted server detail" }, status),

@@ -66,11 +66,12 @@ Remaining verification is tracked separately from these confirmed results.
 
 ### 1. Curriculum resources
 
-- [ ] Prepare the exact original sample resource text during seeding.
-- [ ] Implement administrator resource creation, updates, and retirement.
-- [ ] Enforce resource permissions and runtime validation in NestJS.
-- [ ] Implement teacher browsing of active curriculum resources.
-- [ ] Verify unauthorized resource changes are rejected.
+- [x] Document original fractions sample text for manual administrator entry; see [resource guide](curriculum-resources.md#original-sample-for-manual-entry). No development seeding performed.
+- [x] Implement administrator resource creation, updates, and retirement.
+- [x] Enforce resource permissions and runtime validation in NestJS.
+- [x] Implement teacher browsing of active curriculum resources.
+- [x] Verify unauthorized resource changes are rejected in database-free unit/HTTP tests.
+- [ ] Complete the [manual teacher/administrator browser checklist](curriculum-resources.md#local-startup-and-manual-browser-verification).
 
 Demonstration: an administrator manages resources and a teacher browses the
 available demonstration material.
@@ -157,9 +158,9 @@ then obtain administrator review. AI is required for the full MVP acceptance cri
 
 ## Session notes
 
-The earlier next-task notes below are historical. The current next feature task is
-curriculum resource management and teacher browsing (milestone 1); infrastructure
-preparation may proceed alongside it.
+The earlier next-task notes below are historical. Curriculum resource management
+and browsing are implemented; the browser checklist remains pending. Next feature
+work is teacher drafts (milestone 2); infrastructure preparation may proceed alongside it.
 
 At the end of each session, record:
 
@@ -255,3 +256,14 @@ checks and the manual browser checklist. The developer separately confirmed brow
 API-outage recovery; cookie, CORS/CSRF, HTTPS, component-rendering, and accessibility
 checks remain unverified. See the separate confirmation in that guide. Staging
 prerequisites remain pending.
+
+## Curriculum resource management
+
+Protected administrator create/view/edit/retire endpoints and active-only teacher
+browsing/detail are implemented, with bounded lists, validation, version-checked
+transactions, and Tailwind controls. Resource state is isolated per authenticated
+workspace; conflicts and uncertain writes preserve entered text and require explicit
+reconciliation. The existing schema/migrations and development database are unchanged.
+See [resource contracts and verification](curriculum-resources.md) for practical
+limits, original sample text, actual checks, live isolation, and the pending browser
+checklist. Teacher draft selection/snapshots and lesson workflows remain pending.
