@@ -12,7 +12,7 @@ import {
 } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { canonicalEmail } from './auth.input.js';
-import { AUTH_ROUTE, LOGIN_ROUTE } from './auth.guards.js';
+import { AUTH_ROUTE, LOGIN_ROUTE, RESOURCE_ROUTE } from './auth.guards.js';
 
 type Entry = { hits: number[]; expires: number };
 // No interval/listener keeps Node alive. Entries expire lazily; live keys are never evicted.
@@ -70,6 +70,15 @@ export class AuthRateGuard extends ThrottlerGuard {
     super(
       {
         throttlers: [
+          {
+            name: 'resources',
+            ttl: 60000,
+            limit: 120,
+            setHeaders: false,
+            skipIf: (context) =>
+              reflector.get<boolean>(RESOURCE_ROUTE, context.getClass()) !==
+              true,
+          },
           {
             name: 'login-ip',
             ttl: 300000,

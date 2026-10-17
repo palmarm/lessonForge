@@ -22,8 +22,9 @@ connectivity, compiled startup, root/me responses, shutdown, and session cleanup
 The developer confirmed an unchanged provisioning rerun on `lessonforge_dev` on
 2026-10-13. Frontend sign-in/current-user handling is implemented. Basic browser
 authentication and API-outage recovery are developer-confirmed; remaining browser checks are in
-[frontend verification](frontend-authentication-verification.md). Resource seeding
-and workflow services remain pending; see
+[frontend verification](frontend-authentication-verification.md). Curriculum resource
+management/browsing is implemented; see [resource contracts](curriculum-resources.md).
+Resource seeding and lesson workflow services remain pending; see
 [domain verification](domain-schema-verification.md).
 
 ## 1. Technology choices
@@ -73,6 +74,14 @@ They do not replace backend authorization or validation.
 - Coordinate database transactions.
 - Call the AI provider and validate generated content.
 - Return consistent API errors.
+
+The resources module implements bounded role-filtered lists/details and administrator
+create/edit/retire actions. Version preconditions and row locks protect content
+and retirement updates; retired records are read-only and submitted snapshots are
+untouched. Its [contracts and verification](curriculum-resources.md) document limits,
+errors, and frontend reconciliation. Resource HTTP bodies have a separate 128 KiB
+budget; authentication retains 4 KiB. The frontend shares the validated credentialed
+transport with authentication and isolates resource state by authenticated workspace.
 
 Organize the backend into feature modules:
 authentication, users, resources, lessons, reviews, and AI.

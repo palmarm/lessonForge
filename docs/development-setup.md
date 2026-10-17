@@ -524,3 +524,20 @@ incorrect-password or unavailable-server behavior, keep credentials out of shell
 history and logs, preserve database data, and restore any temporary local
 configuration or service changes after the check. Recorded live checks are in the
 [database-foundation verification guide](database-foundation-verification.md).
+
+## Curriculum resource management
+
+No new package, migration, seed, or account provisioning is required for curriculum
+resource management. Existing local startup commands also serve resource browsing
+and administrator create/edit/retire controls on the home page after sign-in. See
+the [resource guide](curriculum-resources.md) for exact endpoint contracts, plain-text
+limits, an original fractions sample for manual entry, and the teacher/administrator
+browser checklist. Manual entry is a deliberate developer action, not a startup seed.
+
+The separate `npm run test:resources:db --prefix backend` suite applies tracked
+migrations and writes fixtures only to a fresh acknowledged disposable PostgreSQL
+target. It reuses the existing URL/identity/empty-schema guards, never loads real
+environment files, and stays outside ordinary tests and CI. Follow the
+[resource live-test procedure](curriculum-resources.md#separate-live-postgresql-suite),
+including disposal of only the container you created. Never use `lessonforge_dev`
+or reset existing Docker data for this suite.

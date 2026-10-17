@@ -17,6 +17,7 @@ export class SafeExceptionFilter implements ExceptionFilter {
       401: 'Authentication required.',
       403: 'Forbidden.',
       404: 'Not found.',
+      409: 'Resource version or state conflict. Reload before trying again.',
       413: 'Request body too large.',
       415: 'JSON required.',
       429: 'Too many requests.',

@@ -31,7 +31,8 @@
     "sessions:cleanup": "node dist/auth/sessions-cleanup.js",
     "accounts:provision": "node dist/auth/accounts-provision.js",
     "test:accounts:db": "vitest run --config ./vitest.config.accounts-db.ts",
-    "test:auth:db": "vitest run --config ./vitest.config.auth-db.ts"
+    "test:auth:db": "vitest run --config ./vitest.config.auth-db.ts",
+    "test:resources:db": "vitest run --config ./vitest.config.resources-db.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

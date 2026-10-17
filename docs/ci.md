@@ -54,7 +54,7 @@ npm run build
 ```
 
 `typecheck` generates Next.js route types before TypeScript checks. Node 24's
-built-in runner tests the browser API and session state with mocked fetch;
+built-in runner tests authentication/resource APIs and state with mocked fetch;
 no browser, database, or additional test package is required. CI provides the
 public fixture origin `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`; builds do
 not contact that API. The existing production build uses Turbopack and fetches
@@ -84,16 +84,19 @@ missing `backend/.env`; generation requires no database URL. Unit tests use fake
 and HTTP tests replace database access and mock environment loading where needed.
 No PostgreSQL service, repository secrets, or real credentials are needed.
 
-The workflow never invokes `test:db`, `test:constraints`, `test:auth:db`, session
-cleanup, migrations, Docker Compose, API startup, or deployment. HTTP end-to-end
+The workflow never invokes `test:db`, `test:constraints`, `test:auth:db`, `test:accounts:db`,
+`test:resources:db`, session cleanup, migrations, Docker Compose, API startup, or deployment. HTTP end-to-end
 tests cover the scaffold, real authentication/role guards, cookie handling,
-exact-origin CORS/CSRF, rate limits, and shutdown with substituted database access.
+exact-origin CORS/CSRF, rate limits, resource roles/visibility/validation/conflicts,
+and shutdown with substituted database access.
 Unit tests include real native Argon2 hash/verify. They do not prove live database
 connectivity or domain workflows. Live database evidence remains in the
 [database-foundation verification guide](database-foundation-verification.md).
 Initial domain migration enforcement is checked separately against a disposable
 database; see [domain verification](domain-schema-verification.md). Generation
-with models still requires no database URL or live PostgreSQL service.
+with models still requires no database URL or live PostgreSQL service. Resource
+persistence, competing mutations, rollback, and retained snapshots are verified
+separately through the [guarded resource suite](curriculum-resources.md#separate-live-postgresql-suite).
 
 Dependency installation, Node setup, Prisma engine availability, and uncached
 Google Fonts builds need network access. npm caching reduces downloads but does
