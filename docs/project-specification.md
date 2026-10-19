@@ -138,8 +138,13 @@ developer confirmed an unchanged compiled rerun on `lessonforge_dev` on 2026-10-
 Frontend sign-in/current-user handling is implemented. Basic browser authentication
 and API-outage recovery are developer-confirmed; remaining browser checks are
 tracked in [frontend verification](frontend-authentication-verification.md). Curriculum
-resource management and browsing are implemented; resource seeding and lesson
-workflow services remain pending. See [resource contracts](curriculum-resources.md)
+resource management and browsing are implemented; resource browser checklist
+completion was developer-reported on 2026-10-19. Teacher drafts and resource
+selection/removal/refresh are implemented with bounded structural validation;
+see [draft contracts and evidence](teacher-drafts.md). Resource seeding, submission
+completeness validation, submission/review/library/copy workflows and AI remain
+pending. Draft acceptance does not establish submission completeness.
+See [resource contracts](curriculum-resources.md)
 for validation limits and retirement/concurrency choices. See
 [domain verification](domain-schema-verification.md) for the storage checks.
 

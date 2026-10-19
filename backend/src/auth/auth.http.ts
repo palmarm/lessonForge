@@ -44,12 +44,13 @@ export function configureAuthHttp(
   const parse = json({ limit: '4kb', strict: true });
   const parseResource = json({ limit: '128kb', strict: true });
   app.use((req: Request, res: Response, next: NextFunction) => {
-    // Resource text has its own bounded budget; authentication retains its 4 KiB limit.
-    const parser = /^\/resources(?:\/[0-9a-f-]{36}(?:\/retire)?)?\/?$/i.test(
-      req.path,
-    )
-      ? parseResource
-      : parse;
+    // Curriculum text and lesson drafts share a bounded budget; auth retains 4 KiB.
+    const parser =
+      /^\/(?:resources(?:\/[0-9a-f-]{36}(?:\/retire)?)?|lessons(?:\/[0-9a-f-]{36}(?:\/resources\/[0-9a-f-]{36}\/(?:select|remove|refresh))?)?)\/?$/i.test(
+        req.path,
+      )
+        ? parseResource
+        : parse;
     parser(req, res, (error?: { status?: number }) => {
       if (!error) return next();
       const status = error.status === 413 ? 413 : 400;

@@ -188,7 +188,9 @@ Next.js embeds the public API origin. Open exactly `http://localhost:3000` and
 use `localhost` for both applications. Stop each with Ctrl+C. See
 [development setup](development-setup.md) for the established local configuration.
 
-Manual checks are **pending** until a developer records actual outcomes:
+The developer reported completion of this resource browser checklist on
+**2026-10-19**. See the [report and its limits](#developer-browser-report-2026-10-19).
+The checklist is retained for reproducibility:
 
 1. Without a session, confirm resources are hidden and direct API reads return 401.
    Sign in as administrator; load the resource list and create the sample above.
@@ -402,6 +404,20 @@ or real proxy test. Existing resource status tests cover the error reasons, and
 the authentication API test now expects server failures on POSTs to be availability
 errors while retaining GET/401 behavior. The initial full run exposed the old POST
 500 expectation; the final full run passed after updating that expectation.
+
+### Developer browser report 2026-10-19
+
+The developer reported the resource teacher/administrator browser checklist above
+complete on 2026-10-19. This is developer-reported manual browser evidence, not an
+agent rerun or a new automated result. No additional browser traces or item-level
+measurements were supplied for this task. Earlier statements that the manual
+resource checklist was pending describe the earlier verification sessions.
+
+This report does not close previously pending **automated rendered-component**
+coverage, **deployed HTTPS/cookie** verification, or staging prerequisites. The
+tooling assessment below and the separate authentication gaps remain applicable.
+The new [teacher draft browser checklist](teacher-drafts.md#local-checks-and-browser-checklist)
+remains pending; resource browser completion does not establish lesson editor behavior.
 
 ### Rendered-test tooling assessment
 
