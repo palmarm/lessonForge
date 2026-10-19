@@ -137,8 +137,10 @@ applied as of 2026-10-13. Safe local account provisioning is implemented, and th
 developer confirmed an unchanged compiled rerun on `lessonforge_dev` on 2026-10-13.
 Frontend sign-in/current-user handling is implemented. Basic browser authentication
 and API-outage recovery are developer-confirmed; remaining browser checks are
-tracked in [frontend verification](frontend-authentication-verification.md). Resource
-seeding and workflow services remain pending. See
+tracked in [frontend verification](frontend-authentication-verification.md). Curriculum
+resource management and browsing are implemented; resource seeding and lesson
+workflow services remain pending. See [resource contracts](curriculum-resources.md)
+for validation limits and retirement/concurrency choices. See
 [domain verification](domain-schema-verification.md) for the storage checks.
 
 ## 9. Acceptance criteria
