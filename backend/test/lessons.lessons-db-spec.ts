@@ -295,65 +295,140 @@ it('waits behind a held resource lock and then rejects retirement without changi
   await expect(pending).rejects.toMatchObject({ status: 409 });
   expect(await lessons.detail(teacher, created.id)).toEqual(created);
 });
-it('checks current lifecycle after waiting for the lesson lock and never alters submitted history', async () => {
-  const created = await draft();
-  const revision = await db.lessonRevision.create({
-    data: {
-      lessonId: created.id,
-      number: 1,
-      generationOrigin: 'MANUAL',
-      content: { title: 'Submitted fixture' },
-    },
-  });
-  let release!: () => void, locked!: () => void;
-  const ready = new Promise<void>((r) => {
-    locked = r;
-  });
-  const gate = new Promise<void>((r) => {
-    release = r;
-  });
-  const holding = other.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM "Lesson" WHERE id = ${created.id}::uuid FOR UPDATE`;
-    locked();
-    await gate;
-    await tx.lesson.update({
-      where: { id: created.id },
+it.each(['save', 'select', 'remove', 'refresh'] as const)(
+  'checks lifecycle after an observed lesson-lock wait for %s without changing committed draft/source state',
+  async (action) => {
+    const created = await draft();
+    const source = await resource();
+    const selected = await lessons.mutate(teacher, created.id, 1, {
+      action: 'select',
+      resourceId: source.id,
+    });
+    const newSource = action === 'select' ? await resource() : source;
+    const revision = await db.lessonRevision.create({
       data: {
-        currentRevisionId: revision.id,
-        draftContent: Prisma.DbNull,
-        draftGenerationOrigin: null,
-        version: { increment: 1 },
+        lessonId: created.id,
+        number: 1,
+        generationOrigin: 'MANUAL',
+        content: selected.content,
       },
     });
-  });
-  await ready;
-  const pending = lessons.mutate(teacher, created.id, 1, {
-    content: { title: 'Must not overwrite' },
-  });
-  release();
-  await holding;
-  await expect(pending).rejects.toMatchObject({ status: 409 });
-  expect(
-    (await db.lesson.findUniqueOrThrow({ where: { id: created.id } }))
-      .draftContent,
-  ).toBeNull();
-  expect(
-    await db.lessonRevision.findUniqueOrThrow({ where: { id: revision.id } }),
-  ).toEqual(revision);
-  await db.review.create({
-    data: {
-      revisionId: revision.id,
-      reviewerId: admin.id,
-      decision: 'APPROVE',
-    },
-  });
-  await expect(
-    lessons.mutate(teacher, created.id, 2, { content: {} }),
-  ).rejects.toMatchObject({ status: 409 });
-  expect(
-    (await lessons.list(teacher, 50)).items.some((v) => v.id === created.id),
-  ).toBe(false);
-});
+    const snapshot = await db.revisionSource.create({
+      data: {
+        revisionId: revision.id,
+        resourceId: source.id,
+        resourceVersion: selected.sources[0]!.resourceVersion,
+        snapshot: selected.sources[0]!.snapshot,
+      },
+    });
+    let release!: () => void, locked!: (pid: number) => void;
+    const ready = new Promise<number>((r) => {
+      locked = r;
+    });
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const holding = other.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Lesson" WHERE id = ${created.id}::uuid FOR UPDATE`;
+      const [{ pid }] = await tx.$queryRaw<
+        { pid: number }[]
+      >`SELECT pg_backend_pid() AS pid`;
+      locked(pid!);
+      await gate;
+      // This fixture transition intentionally clears the draft; the waiting mutation
+      // must preserve exactly this committed state and its submitted source snapshot.
+      return tx.lesson.update({
+        where: { id: created.id },
+        data: {
+          currentRevisionId: revision.id,
+          draftContent: Prisma.DbNull,
+          draftGenerationOrigin: null,
+          version: { increment: 1 },
+        },
+      });
+    });
+    const holderPid = await ready;
+    let settled = false;
+    const pending = Promise.allSettled([
+      lessons.mutate(
+        teacher,
+        created.id,
+        selected.version,
+        action === 'save'
+          ? { content: { title: 'Must not overwrite' } }
+          : { action, resourceId: newSource.id },
+      ),
+    ]).finally(() => {
+      settled = true;
+    });
+    try {
+      const deadline = Date.now() + 3000;
+      let waiting = false;
+      while (Date.now() < deadline) {
+        const rows = await other.$queryRaw<{ waiting: boolean }[]>`
+          SELECT EXISTS (
+            SELECT 1 FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'
+              AND ${holderPid} = ANY(pg_blocking_pids(pid))
+              AND query LIKE '%FROM "Lesson"%FOR UPDATE%'
+          ) AS waiting
+        `;
+        if (rows[0]?.waiting) {
+          waiting = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(waiting).toBe(true);
+      expect(settled).toBe(false);
+    } finally {
+      release();
+      // Drain both promises even if the observed-wait assertion fails.
+      await Promise.allSettled([holding, pending]);
+    }
+    const committed = await holding;
+    const [result] = await pending;
+    expect(result!.status).toBe('rejected');
+    if (result!.status !== 'rejected')
+      throw new Error('Waiting mutation unexpectedly succeeded.');
+    expect(result!.reason).toMatchObject({
+      status: 409,
+      message: 'Lesson state conflict.',
+    });
+    expect(
+      await db.lesson.findUniqueOrThrow({ where: { id: created.id } }),
+    ).toEqual(committed);
+    expect(committed.draftContent).toBeNull();
+    expect(committed.draftGenerationOrigin).toBeNull();
+    expect(committed.version).toBe(selected.version + 1);
+    expect(
+      await db.lessonRevision.findUniqueOrThrow({ where: { id: revision.id } }),
+    ).toEqual(revision);
+    expect(
+      await db.revisionSource.findUniqueOrThrow({
+        where: {
+          revisionId_resourceId: {
+            revisionId: revision.id,
+            resourceId: source.id,
+          },
+        },
+      }),
+    ).toEqual(snapshot);
+    await db.review.create({
+      data: {
+        revisionId: revision.id,
+        reviewerId: admin.id,
+        decision: 'APPROVE',
+      },
+    });
+    await expect(
+      lessons.mutate(teacher, created.id, committed.version, { content: {} }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      (await lessons.list(teacher, 50)).items.some((v) => v.id === created.id),
+    ).toBe(false);
+  },
+);
 it('saves changes-requested fixtures without modifying the submitted revision, review, or snapshot', async () => {
   const created = await draft(),
     source = await resource();

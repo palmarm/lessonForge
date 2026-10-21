@@ -82,6 +82,18 @@ function ResourcesWorkspace({
         Grade 4 Mathematics · Demonstration material without claims of official
         curriculum alignment.
       </p>
+      {!admin && (
+        <p className="rounded-lg bg-slate-50 p-3 text-slate-700">
+          This is the read-only curriculum resource browser. To edit a lesson
+          introduction or save lesson content,{" "}
+          <a className="underline" href="#drafts-heading">
+            go to My lesson drafts
+          </a>{" "}
+          and create or open a draft. Select resources and manage their saved
+          snapshots inside that lesson editor. Browsing here does not save or
+          change a lesson.
+        </p>
+      )}
       <p role="status" className="text-slate-700">
         {state.pending === "write"
           ? "Saving resource…"

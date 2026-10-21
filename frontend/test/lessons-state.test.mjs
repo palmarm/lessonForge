@@ -3,8 +3,10 @@ import { test } from "node:test";
 import {
   createLessonsState,
   initialLessonState,
+  hasUnsavedLessonContent,
 } from "../src/lib/lessons-state.ts";
 import { createLessonsApi } from "../src/lib/lessons-api.ts";
+import { createResourcesApi } from "../src/lib/resources-api.ts";
 import { AuthApiError } from "../src/lib/api-request.ts";
 // Fixtures are local to avoid registering another test module twice.
 const id = "11111111-1111-4111-8111-111111111111";
@@ -337,7 +339,9 @@ test("uncertain creation through real transport preserves entered content and ne
       assert.equal(store.getSnapshot().editId, null);
       assert.equal(store.getSnapshot().baseVersion, null);
       if (committed) await store.inspectCreation(id);
-      store.acknowledge();
+      if (committed) store.acknowledge();
+      else store.confirmCreationNotFound();
+      assert.equal(store.getSnapshot().uncertain, null);
       assert.equal(store.getSnapshot().form.title, "Entered");
       assert.equal(store.getSnapshot().editId, null);
       if (committed) {
@@ -373,4 +377,271 @@ test("active resource browsing validates visibility and does not replace entered
   await store.resource(resourceId);
   assert.ok(store.getSnapshot().error);
   assert.equal(store.getSnapshot().form.title, "Keep entered text");
+});
+
+test("creation candidate A is cleared before inspecting B; failed B cannot acknowledge, adopt or retry", async () => {
+  const { store, api } = fixture();
+  let writes = 0;
+  api.create = async () => {
+    writes++;
+    throw new AuthApiError("unavailable", "Creation uncertain");
+  };
+  store.create();
+  store.field({ title: "Keep my entered lesson" });
+  await store.save();
+  await store.reconcile();
+  store.acknowledge();
+  assert.ok(
+    store.getSnapshot().uncertain,
+    "a list read is not a candidate inspection",
+  );
+  await store.inspectCreation(id);
+  assert.equal(store.getSnapshot().reconciled, true);
+  const b = deferred();
+  api.detail = () => b.promise;
+  const pending = store.inspectCreation(resourceId);
+  assert.equal(store.getSnapshot().reconciled, false);
+  assert.equal(store.getSnapshot().latest, null);
+  assert.equal(store.getSnapshot().creationListChecked, false);
+  store.acknowledge();
+  store.confirmCreationNotFound();
+  b.reject(new AuthApiError("unavailable", "Candidate B unavailable"));
+  await pending;
+  store.acknowledge();
+  store.adoptLatest();
+  store.confirmCreationNotFound();
+  await store.save();
+  assert.equal(writes, 1);
+  assert.ok(store.getSnapshot().uncertain);
+  assert.equal(store.getSnapshot().latest, null);
+  assert.equal(store.getSnapshot().editId, null);
+  assert.equal(store.getSnapshot().baseVersion, null);
+  assert.equal(store.getSnapshot().form.title, "Keep my entered lesson");
+  api.detail = async () => ({ ...lesson, id: resourceId, version: 4 });
+  await store.inspectCreation(resourceId); // Failed B can be inspected again without weakening acknowledgement.
+  store.acknowledge();
+  assert.equal(store.getSnapshot().editId, null);
+  store.adoptLatest();
+  assert.equal(store.getSnapshot().editId, resourceId);
+  assert.equal(store.getSnapshot().baseVersion, 4);
+  assert.equal(store.getSnapshot().form.title, "Keep my entered lesson");
+});
+
+test("stale candidate successes/failures cannot restore eligibility after authentication pause or disposal", async () => {
+  for (const oldFails of [false, true])
+    for (const currentFails of [false, true]) {
+      const { store, api } = fixture();
+      api.create = async () => {
+        throw new AuthApiError("unavailable", "Creation uncertain");
+      };
+      store.create();
+      store.field({ title: "Private entered text" });
+      await store.save();
+      await store.inspectCreation(id);
+      const old = deferred();
+      api.detail = () => old.promise;
+      const pending = store.inspectCreation(id);
+      store.pause(true);
+      store.pause(false);
+      api.detail = async () => {
+        if (currentFails)
+          throw new AuthApiError("unavailable", "Current inspection failed");
+        return { ...lesson, id: resourceId, version: 3 };
+      };
+      await store.inspectCreation(resourceId);
+      if (oldFails) old.reject(new Error("Old inspection failed"));
+      else old.resolve({ ...lesson, version: 99 });
+      await pending;
+      assert.equal(store.getSnapshot().reconciled, !currentFails);
+      assert.equal(
+        store.getSnapshot().latest?.id ?? null,
+        currentFails ? null : resourceId,
+      );
+      assert.equal(store.getSnapshot().editId, null);
+      assert.equal(store.getSnapshot().baseVersion, null);
+      assert.equal(store.getSnapshot().form.title, "Private entered text");
+      const last = deferred();
+      api.detail = () => last.promise;
+      const disposed = store.inspectCreation(id);
+      store.dispose();
+      store.activate();
+      last.resolve(lesson);
+      await disposed;
+      assert.deepEqual(store.getSnapshot(), initialLessonState);
+    }
+});
+
+test("empty creation search has a separate explicit no-match choice; wrong-target inspection fails closed", async () => {
+  const { store, api } = fixture();
+  let writes = 0;
+  api.create = async () => {
+    writes++;
+    throw new AuthApiError("unavailable", "Unknown result");
+  };
+  store.create();
+  await store.save();
+  await store.reconcile();
+  store.acknowledge();
+  await store.save();
+  assert.equal(writes, 1);
+  assert.ok(store.getSnapshot().creationListChecked);
+  api.detail = async () => ({ ...lesson, id: resourceId });
+  await store.inspectCreation(id);
+  assert.equal(store.getSnapshot().reconciled, false);
+  assert.equal(store.getSnapshot().latest, null);
+  store.confirmCreationNotFound();
+  assert.ok(store.getSnapshot().uncertain);
+  await store.reconcile();
+  store.confirmCreationNotFound();
+  assert.equal(store.getSnapshot().uncertain, null);
+  assert.equal(writes, 1, "explicit no-match choice never sends a write");
+  assert.equal(store.getSnapshot().editId, null);
+  assert.equal(store.getSnapshot().baseVersion, null);
+});
+
+test("read-only resource browsing is separate from editing, source saves retain unsaved introduction, and reload requires reopening", async () => {
+  let persisted = null,
+    writes = 0;
+  const resource = {
+    id: resourceId,
+    title: "Fraction reference",
+    subject: "Mathematics",
+    grade: "Grade 4",
+    sourceReference: "Original demonstration",
+    contentText: "Resource introduction, read-only.",
+    version: 1,
+    retiredAt: null,
+    createdAt: lesson.createdAt,
+    updatedAt: lesson.updatedAt,
+  };
+  const reply = (value, status = 200) =>
+    new Response(JSON.stringify(value), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  const summary = (v) =>
+    Object.fromEntries(
+      Object.entries(v).filter(
+        ([k]) =>
+          ![
+            "content",
+            "sources",
+            "generationOrigin",
+            "sourceReference",
+            "contentText",
+          ].includes(k),
+      ),
+    );
+  const fetcher = async (url, options) => {
+    const path = new URL(url).pathname;
+    if (path === "/resources")
+      return reply({ items: [summary(resource)], nextAfter: null });
+    if (path === `/resources/${resourceId}`) return reply(resource);
+    if (options.method === "GET")
+      return path === "/lessons"
+        ? reply({
+            items: persisted ? [summary(persisted)] : [],
+            nextAfter: null,
+          })
+        : reply(persisted);
+    const body = JSON.parse(options.body);
+    writes++;
+    if (path === "/lessons") {
+      persisted = {
+        ...lesson,
+        title: body.content.title ?? "",
+        content: body.content,
+      };
+      return reply(persisted, 201);
+    }
+    assert.equal(body.expectedVersion, persisted.version);
+    if (options.method === "PUT")
+      persisted = {
+        ...persisted,
+        content: body.content,
+        title: body.content.title ?? "",
+        version: persisted.version + 1,
+      };
+    else {
+      const action = path.split("/").at(-1);
+      const { title, subject, grade, sourceReference, contentText } = resource;
+      persisted = {
+        ...persisted,
+        version: persisted.version + 1,
+        sources:
+          action === "remove"
+            ? []
+            : [
+                {
+                  resourceId,
+                  resourceVersion: resource.version,
+                  snapshot: {
+                    title,
+                    subject,
+                    grade,
+                    sourceReference,
+                    contentText,
+                  },
+                },
+              ],
+      };
+    }
+    return reply(persisted);
+  };
+  const api = createLessonsApi("http://localhost:3001", fetcher);
+  const resources = createResourcesApi("http://localhost:3001", fetcher);
+  const store = createLessonsState(api, undefined, resources);
+  await store.resources();
+  await store.resource(resourceId);
+  assert.equal(store.getSnapshot().form, null);
+  await store.save();
+  await store.source(resourceId, "select");
+  assert.equal(writes, 0);
+  store.create();
+  store.field({
+    title: "Fractions lesson",
+    introduction: { text: "My introduction" },
+  });
+  assert.equal(hasUnsavedLessonContent(store.getSnapshot()), true);
+  await store.save();
+  assert.equal(hasUnsavedLessonContent(store.getSnapshot()), false);
+  const savedId = store.getSnapshot().editId;
+  store.field({
+    introduction: { text: "Entered introduction not yet saved" },
+    title: "Fractions lesson",
+  });
+  for (const action of ["select", "refresh", "remove"]) {
+    if (action === "refresh") {
+      resource.version++;
+      resource.contentText = "New reference introduction";
+    }
+    await store.source(resourceId, action);
+    assert.equal(
+      store.getSnapshot().form.introduction.text,
+      "Entered introduction not yet saved",
+    );
+    assert.equal(persisted.content.introduction.text, "My introduction");
+    assert.equal(hasUnsavedLessonContent(store.getSnapshot()), true);
+  }
+  await store.save();
+  assert.equal(hasUnsavedLessonContent(store.getSnapshot()), false);
+  store.field({
+    ...store.getSnapshot().form,
+    introduction: { text: "Unsaved before page refresh" },
+  });
+  store.dispose();
+  const reloaded = createLessonsState(api, undefined, resources);
+  await reloaded.list();
+  assert.equal(reloaded.getSnapshot().items[0].id, savedId);
+  assert.equal(
+    reloaded.getSnapshot().form,
+    null,
+    "page refresh does not silently open/adopt a draft",
+  );
+  await reloaded.view(savedId);
+  assert.equal(
+    reloaded.getSnapshot().form.introduction.text,
+    "Entered introduction not yet saved",
+  );
+  assert.equal(hasUnsavedLessonContent(reloaded.getSnapshot()), false);
 });

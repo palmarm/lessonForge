@@ -84,6 +84,7 @@ available demonstration material.
 - [x] Create, list, view, edit, and save incomplete manual drafts with bounded structural validation.
 - [x] Verify conflicting content/source saves cannot silently overwrite work in database-free and disposable PostgreSQL tests.
 - [x] Implement the teacher draft editor with explicit uncertainty/conflict reconciliation and identity isolation.
+- [x] Correct creation candidate reconciliation and add observed lifecycle lock-wait coverage; clarify resource browsing versus lesson editing and saved/unsaved content (2026-10-21; see [correction evidence](teacher-drafts.md#correction-verification-2026-10-21)).
 - [ ] Complete the [teacher draft browser checklist](teacher-drafts.md#local-checks-and-browser-checklist) and automated rendered interaction coverage.
 
 Draft validity is implemented; submission completeness validation remains in

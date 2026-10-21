@@ -8,7 +8,11 @@ import {
 import { useAuth } from "./auth-provider";
 import { createLessonsApi, type DraftContent } from "@/lib/lessons-api";
 import { createResourcesApi } from "@/lib/resources-api";
-import { createLessonsState, initialLessonState } from "@/lib/lessons-state";
+import {
+  createLessonsState,
+  hasUnsavedLessonContent,
+  initialLessonState,
+} from "@/lib/lessons-state";
 
 const button =
   "rounded-lg border border-slate-500 bg-white px-4 py-2 text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-50";
@@ -69,6 +73,16 @@ function LessonsWorkspace({
   const busy = !!state.pending;
   const locked = busy || !!state.uncertain || state.blocked;
   const form = state.form;
+  const unsaved = hasUnsavedLessonContent(state);
+  useEffect(() => {
+    if (!unsaved && !state.uncertain && state.pending !== "write") return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved, state.uncertain, state.pending]);
   const change = (patch: Partial<DraftContent>) => {
     if (form) store.field({ ...form, ...patch });
   };
@@ -77,11 +91,13 @@ function LessonsWorkspace({
     value: string | undefined,
     onChange: (v: string) => void,
     maxLength = 4000,
+    id?: string,
   ) {
     return (
       <label className="block space-y-1 font-medium">
         {label}
         <textarea
+          id={id}
           className={input}
           value={value ?? ""}
           maxLength={maxLength}
@@ -127,6 +143,16 @@ function LessonsWorkspace({
         submitted revision. Submission and submission validation are not
         available yet.
       </p>
+      {!form && (
+        <p className="rounded-lg bg-slate-50 p-3">
+          No lesson is open. Choose <strong>New manual draft</strong> or{" "}
+          <strong>Open draft</strong> below to edit your lesson introduction and
+          other sections. After refreshing this page, reopen your saved draft
+          from the list. Only saved content can be restored; unsaved text is not
+          stored across page refreshes. Reading a curriculum resource does not
+          open or create a lesson.
+        </p>
+      )}
       <p role="status">
         {busy
           ? state.pending === "write"
@@ -161,18 +187,17 @@ function LessonsWorkspace({
           <li key={v.id}>
             <button
               className={button}
-              disabled={
-                busy ||
-                (!!form &&
-                  !(state.uncertain?.type === "create" && state.reconciled))
-              }
+              disabled={busy || (!!form && state.uncertain?.type !== "create")}
               onClick={() =>
                 void (state.uncertain?.type === "create"
                   ? store.inspectCreation(v.id)
                   : store.view(v.id))
               }
             >
-              {v.title || "Untitled draft"} · Version {v.version}
+              {state.uncertain?.type === "create"
+                ? "Inspect possible saved draft: "
+                : "Open draft: "}
+              {v.title || "Untitled draft"} · Saved version {v.version}
             </button>
           </li>
         ))}
@@ -201,6 +226,39 @@ function LessonsWorkspace({
                 ? `Edit draft · based on version ${state.baseVersion}`
                 : "New draft"}
             </h3>
+            <p role="status">
+              {state.editId
+                ? unsaved
+                  ? `Unsaved lesson content. Last confirmed saved version: ${state.baseVersion}. Save draft content to keep these edits.`
+                  : `Lesson content matches confirmed saved version ${state.baseVersion}.`
+                : "New lesson — not saved yet. Write your content, then choose Save draft content."}{" "}
+              Resource selection saves separately. Refreshing the page requires
+              reopening the saved draft.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <button className={button} type="submit" disabled={locked}>
+                Save draft content
+              </button>
+              <a className="underline" href="#lesson-introduction">
+                Edit introduction
+              </a>
+              <a className="underline" href="#draft-sources-heading">
+                Select or manage resource snapshots
+              </a>
+            </div>
+            {state.uncertain && (
+              <p>
+                A write is unconfirmed. Use Load latest result below; entered
+                content is retained.
+              </p>
+            )}
+            {state.blocked && (
+              <p>
+                Saving is paused after a conflict. Load the latest result,
+                compare it, then explicitly choose its version before saving
+                again.
+              </p>
+            )}
             {state.editId && (
               <p className="break-words text-sm">Draft ID: {state.editId}</p>
             )}
@@ -229,8 +287,13 @@ function LessonsWorkspace({
                 (v) => change({ materials: v === "" ? [] : v.split("\n") }),
                 15029,
               )}
-              {textField("Introduction", form.introduction?.text, (v) =>
-                change({ introduction: { ...form.introduction, text: v } }),
+              {textField(
+                "Lesson introduction (editable)",
+                form.introduction?.text,
+                (v) =>
+                  change({ introduction: { ...form.introduction, text: v } }),
+                4000,
+                "lesson-introduction",
               )}
               {minutes(
                 "Introduction duration (minutes)",
@@ -326,9 +389,6 @@ function LessonsWorkspace({
                     },
                   }),
               )}
-              <button className={button} type="submit" disabled={locked}>
-                Save draft content
-              </button>
             </fieldset>
           </form>
           <button
@@ -343,7 +403,7 @@ function LessonsWorkspace({
             className="space-y-3 border-t pt-5"
           >
             <h3 id="draft-sources-heading" className="text-xl font-semibold">
-              Selected resource snapshots
+              Selected resource snapshots (saved separately)
             </h3>
             <p>
               Up to five resources. Selections save separately and retain your
@@ -351,6 +411,13 @@ function LessonsWorkspace({
               snapshots, including after resource edits or retirement. Refresh
               explicitly replaces one snapshot with its latest active version.
             </p>
+            {!state.saved?.sources.length && (
+              <p>
+                No resources selected. Save the draft, browse the available
+                active resources below, then select one. Remove and refresh
+                controls appear for each selected snapshot.
+              </p>
+            )}
             {state.saved?.sources.map((s) => (
               <article
                 key={s.resourceId}
@@ -359,6 +426,10 @@ function LessonsWorkspace({
                 <h4 className="font-semibold break-words">
                   {s.snapshot.title} · Selected version {s.resourceVersion}
                 </h4>
+                <p className="text-sm">
+                  Read-only retained source snapshot. Write your own lesson
+                  content in the editor above.
+                </p>
                 <p className="whitespace-pre-wrap break-words">
                   {s.snapshot.sourceReference}
                 </p>
@@ -390,6 +461,14 @@ function LessonsWorkspace({
               <p>Save the draft first to select resources.</p>
             ) : (
               <>
+                <h4 className="font-semibold">
+                  Available active resources (read-only)
+                </h4>
+                <p>
+                  Read the source material, then choose Select latest active
+                  resource to attach a trusted snapshot to this draft. Resource
+                  text is separate from your editable lesson.
+                </p>
                 <button
                   className={button}
                   disabled={busy}
@@ -507,6 +586,24 @@ function LessonsWorkspace({
                 I checked the result; allow another action
               </button>
             )}
+            {state.uncertain?.type === "create" &&
+              state.creationListChecked && (
+                <div className="space-y-2">
+                  <p>
+                    Inspect possible saved drafts and check every relevant list
+                    page before creating again. If none matches, you can
+                    explicitly allow a new create; it may duplicate a creation
+                    whose result was lost.
+                  </p>
+                  <button
+                    className={button}
+                    disabled={busy}
+                    onClick={store.confirmCreationNotFound}
+                  >
+                    I found no matching draft; allow a new create
+                  </button>
+                </div>
+              )}
           </div>
         </>
       )}

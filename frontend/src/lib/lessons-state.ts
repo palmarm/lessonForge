@@ -25,6 +25,7 @@ export type LessonState = LessonPage & {
   notice: string | null;
   uncertain: Write | null;
   reconciled: boolean;
+  creationListChecked: boolean;
   blocked: boolean;
   resourceItems: ResourceSummary[];
   resourceNext: string | null;
@@ -43,11 +44,28 @@ export const initialLessonState: LessonState = {
   notice: null,
   uncertain: null,
   reconciled: false,
+  creationListChecked: false,
   blocked: false,
   resourceItems: [],
   resourceNext: null,
   resourceDetail: null,
 };
+export function hasUnsavedLessonContent(
+  state: Pick<LessonState, "form" | "saved">,
+): boolean {
+  if (!state.form) return false;
+  if (!state.saved) return true;
+  // JSONB may return keys in a different order; omitted optional values serialize away.
+  const json = (content: DraftContent) =>
+    JSON.stringify(content, (_key, value: unknown) =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(
+            Object.entries(value).sort(([a], [b]) => a.localeCompare(b)),
+          )
+        : value,
+    );
+  return json(state.form) !== json(state.saved.content);
+}
 export function createLessonsState(
   api: LessonsApi,
   sessionEnded: () => void = () => {},
@@ -78,7 +96,9 @@ export function createLessonsState(
       pending: operation ? "write" : "read",
       error: null,
       notice: null,
-      ...(reconciling ? { reconciled: false, latest: null } : {}),
+      ...(reconciling
+        ? { reconciled: false, latest: null, creationListChecked: false }
+        : {}),
     });
     try {
       const patch = await request(controller.signal);
@@ -266,25 +286,49 @@ export function createLessonsState(
               }
             : {
                 ...(await api.list(undefined, signal)),
-                reconciled: state.uncertain?.type === "create",
+                reconciled: false,
+                creationListChecked: state.uncertain?.type === "create",
               },
         true,
       );
     },
     inspectCreation: (id: string) => {
-      if (state.uncertain?.type !== "create" || !state.reconciled)
-        return Promise.resolve();
-      return run(null, async (signal) => ({
-        latest: await api.detail(id, signal),
-      }));
+      if (state.uncertain?.type !== "create") return Promise.resolve();
+      return run(
+        null,
+        async (signal) => {
+          const latest = await api.detail(id, signal);
+          if (latest.id !== id)
+            throw new AuthApiError(
+              "invalid-response",
+              "Unexpected draft candidate. Inspect the intended draft again.",
+            );
+          return { latest, reconciled: true };
+        },
+        true,
+      );
     },
     acknowledge: () => {
       if (idle() && state.uncertain && state.reconciled)
         update({
           uncertain: null,
           reconciled: false,
+          creationListChecked: false,
           notice:
             "Result checked. Choose explicitly whether to adopt the displayed draft/version or create again.",
+        });
+    },
+    confirmCreationNotFound: () => {
+      if (
+        idle() &&
+        state.uncertain?.type === "create" &&
+        state.creationListChecked
+      )
+        update({
+          uncertain: null,
+          creationListChecked: false,
+          notice:
+            "You confirmed no matching draft after checking the list. Entered text is retained. A deliberate new create may duplicate an earlier creation; nothing has been retried.",
         });
     },
     adoptLatest: () => {

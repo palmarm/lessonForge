@@ -126,9 +126,21 @@ or 500/502/503/504. Those outcomes may already have committed.
 Load latest result keeps entered content, draft identity, base version and current
 selection baseline unchanged. For an uncertain known draft, it loads that exact
 draft's detail; list loads cannot acknowledge it. For an uncertain creation with no
-known ID, it loads the list; inspect candidate detail and all relevant pages,
-compare, then explicitly acknowledge. Creation has no idempotency key; another
-deliberate create after acknowledgement can duplicate a committed creation.
+known ID, it loads the list. A list read enables searching but does not enable
+candidate acknowledgement. Each `inspectCreation()` first clears the previous
+candidate, `latest`, and `reconciled`; only a successful current, matching-ID detail
+response enables acknowledgement. A failed inspection stays blocked, and a stale
+success/failure after authentication pause or identity disposal cannot restore an
+old candidate. The teacher can retry a candidate inspection without first adopting
+anything. Compare its content, then explicitly acknowledge.
+
+If no saved draft matches after checking the relevant list pages, a separate
+**I found no matching draft; allow a new create** choice releases creation
+uncertainty without adopting a draft or sending a write. It requires a successful
+fresh list reconciliation and is invalidated by starting any candidate inspection,
+including one that fails. Reconcile the list again before choosing this path after
+a failed inspection. Creation has no idempotency key; a deliberate new create
+can duplicate a committed creation whose result was lost.
 Choosing **Use displayed draft, version, and selections with my entered text**
 explicitly adopts identity/version/selections while retaining the entered content.
 This is a deliberate whole-content replacement on the next save, not a field merge.
@@ -141,6 +153,58 @@ entered work and disables controls. The store also pauses, aborts and invalidate
 pending responses; a pending write becomes uncertain and must be reconciled after
 session recovery. Late successes/failures cannot affect a newer workspace.
 Read controls cannot overlap writes. No local/session storage is used for drafts.
+
+## Browser-report investigation and focused usability corrections
+
+The 2026-10-21 developer report described readable resource material, an
+uneditable introduction, absent save/select/remove/refresh controls, and content
+disappearing after page refresh. The checkpoint `3fabe39` on
+`feat/lesson-drafts` was inspected first; the working tree was clean. No development
+database, browser session or real environment configuration was accessed.
+
+Tracing the checkpoint's JSX, stores and request helpers established these
+conditions before UI changes:
+
+| Location/state | Content and controls | Page refresh |
+|---|---|---|
+| Standalone **Curriculum resources** (`ResourcesPanel`) | Resource material is plain text. Teachers have browsing controls; resource editing belongs to administrators. This panel neither opens a lesson nor exposes lesson save/select/remove/refresh. | Resource detail selection is local UI state; it must be reopened. |
+| **My lesson drafts**, no draft open (`form === null`) | The introduction/editor and its actions are absent until New manual draft or Open draft sets the form. Browsing a resource does not set it. | A fresh workspace starts with no open draft and loads summaries only; saved drafts must be explicitly reopened. |
+| New unsaved lesson | Lesson introduction and other fields are editable. Save creates the draft; resource selection requires that saved lesson ID. The checkpoint save button was below the long form. | Unsaved content is memory-only and is not restored. |
+| Open saved lesson | Content save is available; Select appears after browsing an active resource within the editor. Remove/refresh appear for each selected snapshot. Source actions save snapshots separately and retain entered lesson text. | Reopening fetches saved content and snapshots from the API, rather than adopting a version automatically. |
+| Authentication unconfirmed, or request pending | The outer session fieldset or pending-request fieldset disables controls. Conflicts/uncertain writes block writes pending explicit reconciliation; they preserve entered content. | These protections must not be removed to make controls appear editable. |
+
+These conditions explain how the reported symptoms can occur without database
+data loss. They do not establish which heading the developer actually clicked,
+whether the previous content had a confirmed save, or whether a disabled browser
+control had another cause. A clarification was requested; the exact rendered
+session has not been reproduced. The request/state fixture separately verifies
+that resource browsing sends no lesson writes, saved introductions survive a
+workspace recreation and explicit reopen, and unsaved changes are not persisted
+by selection/removal/refresh. This fixture is not evidence about development data.
+
+The focused UI corrections make the existing workflow explicit:
+
+- The resource browser identifies itself as read-only and links to My lesson drafts.
+- With no lesson open, the draft workspace explains New manual draft/Open draft,
+  reopening after refresh, and the saved/unsaved distinction. List buttons say
+  Open draft (or Inspect possible saved draft during creation recovery).
+- The editor places Save draft content beside its heading, labels the lesson
+  introduction as editable, and links directly to it and the source controls.
+- A saved/unsaved indicator compares content structurally, ignoring object key
+  order and omitted optional values. Source writes do not imply lesson text was saved.
+- Available active resources and retained selected snapshots are labeled separately
+  as read-only source material; empty-selection text explains when controls appear.
+- A native `beforeunload` warning is requested for unsaved content, pending writes,
+  or uncertain writes. Browser policy/user interaction determines whether a dialog
+  appears. It does not save content, retry a write, or guarantee recovery after reload.
+
+No backend permissions, endpoints, validation rules, version checks, snapshot
+semantics, schema or migrations changed. This is a workflow clarification, not a
+broader interface redesign or evidence of submission completeness/workflow support.
+If My lesson drafts is entirely absent for a confirmed teacher, first verify that
+the frontend process is serving this branch/checkpoint and restart that process
+privately as needed. A browser running older compiled code has not been ruled out
+by this source-only investigation.
 
 ## Local checks and browser checklist
 
@@ -206,6 +270,116 @@ was **developer-reported on 2026-10-19**; see the
 [separate resource evidence](curriculum-resources.md#developer-browser-report-2026-10-19).
 That report does not establish previously pending automated rendered-component
 tests, HTTPS/cookies, or deployment readiness.
+
+For the corrections, repeat the checklist with special attention to opening a
+draft after refresh, editing the labeled lesson introduction, the top save action,
+saved/unsaved status across source actions, and the browser's unload warning.
+For uncertain creation, inspect A successfully, fail inspection B, and confirm
+that A disappears and acknowledgement/adoption remain blocked. Repeat with late
+responses across Check session/logout. After a fresh list read with no match,
+the separate no-match choice must not send a POST automatically.
+
+## Correction verification 2026-10-21
+
+Started on `feat/lesson-drafts` at developer-created checkpoint `3fabe39`
+(`wip: add teacher drafts pending review corrections`) with a clean working tree.
+The follow-up status/diff inspection requested during the task confirmed five
+partial implementation/test changes and no schema, migration, package or backend
+production-service change. No commit, push, package installation, real `.env` read,
+development-database connection or applied-migration edit was performed.
+
+The corrections touch `frontend/src/lib/lessons-state.ts`,
+`frontend/src/components/lessons-panel.tsx`,
+`frontend/src/components/resources-panel.tsx`,
+`frontend/test/lessons-state.test.mjs`,
+`backend/test/lessons.lessons-db-spec.ts`, this guide and the roadmap status note.
+
+New frontend cases cover A succeeding then B failing (with old candidate and
+eligibility cleared before the request), unsuccessful/wrong-target inspection,
+stale successes and failures across authentication pause/disposal, explicit
+version adoption, separate deliberate no-match recovery, and the distinction
+between read-only browsing, editable introduction, source writes, content saves,
+and explicit reopening after workspace recreation. They use the actual API
+helpers/shared credentialed transport with mocked fetch for the full round trip.
+
+The corrected live lifecycle case is parameterized over save/select/remove/refresh.
+It obtains the holder's PostgreSQL PID and observes a waiting lesson `FOR UPDATE`
+query whose `pg_blocking_pids()` contains that PID, while the request remains
+unsettled. Only then does it release the fixture gate to commit the lifecycle
+change. Each waiting mutation must reject specifically with a state conflict,
+and the complete lesson row must equal the committed transition result, including
+version/timestamps/draft/origin. The fixture transition intentionally clears the
+draft for submission; the rejected request must not restore or replace it. The
+submitted revision and full source snapshot must also equal their fixture values
+as returned through Prisma. This strengthens test evidence and does
+not add a lifecycle endpoint or submission validation.
+
+Checks used installed Node 24.21.0 and dependencies in
+`/tmp/lessonforge-draft-corrections-20261021-3wxorn51`; source/configuration were
+copied with all `.env*`, existing output and Git metadata excluded, and installed
+dependencies were linked without installation.
+
+| Correction check | Actual result |
+|---|---|
+| Targeted frontend lesson API/state tests | 17 passed |
+| Full frontend request/state suite (`npm test`) | 82 passed |
+| Backend `tsc --noEmit` and `npm run lint` | Passed, no lint warnings |
+| Frontend `npm run typecheck` and `npm run lint` | Passed, no lint warnings |
+| Fresh guarded `npm run test:lessons:db -- --reporter=dot` | 13 passed, including all four observed lesson-lock waits |
+| Frontend `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001 npm run build -- --webpack` | Passed with permission: compilation, TypeScript, static pages and build tracing |
+| Changed-source Prettier, whitespace and local documentation links/anchors | Passed |
+
+The sandboxed Webpack attempt stopped with `Could not parse output from
+TypeScript's --showConfig`. Its permitted retry encountered transient Google Fonts
+DNS failures, retried those downloads, then completed successfully. No production
+font configuration or build command was changed. All five changed application/test
+files matched the isolated verification copy after the final checks.
+
+The sandboxed live invocation failed its identity query before migration or
+fixture writes. The permitted retry passed the dedicated URL, live database/user
+identity and empty-public-schema guards, deployed only the tracked migrations and
+passed on PostgreSQL 17.11. The container was created with `--pull=never`, tmpfs
+data, no mounted volumes and loopback port 5434. Its exact ID was
+`ccb5e09a128c509e088d629aba4bdb21c1b01b629328af71d6d6afacf8b0bc10`
+(`lessonforge-draft-corrections-20261021-3wxorn51`).
+Tests disconnected before that exact container was stopped. `--rm` removed it and
+an ID-filtered container listing returned no matches. Existing Docker data was
+untouched.
+After the final source comparison, the correction verification copy and its build
+output were removed. The installed source dependencies were retained.
+
+Backend production code and HTTP contracts did not change. The 2026-10-19 unit,
+HTTP and backend-build results below are reused evidence, not claimed as rerun
+for this correction. Live tests remain opt-in outside ordinary CI. A new GitHub
+run, default Turbopack build, development-database outcome, rendered browser test
+or HTTPS verification is not established by these results.
+
+### Additional rendered-test tooling
+
+Installed-package inspection again found no Playwright, Puppeteer, React Testing
+Library, JSDOM, Happy DOM or React Test Renderer. React/React DOM and the Node
+runner support the existing request/state tests, but do not supply a browser/DOM
+for hooks, nested disabled fieldsets, actual focus, reload or unload-dialog tests.
+No packages or browser binaries were installed.
+
+If approved in a separate tooling task, these developer-run commands add
+Playwright to the frontend manifest/lockfile and download Chromium:
+
+```bash
+npm install --save-dev --prefix frontend @playwright/test
+cd frontend
+npx --no-install playwright install chromium
+```
+
+Then add database-free browser fixtures that mock `/auth/*`, `/lessons*` and
+`/resources*`, retaining mock saved data across reloads. Exercise the actual teacher
+resource browser versus editable introduction, visible save/source actions,
+disabled controls during unconfirmed auth and pending requests, stale deferred
+responses, failed B after successful A, no-match recovery, saved/unsaved status,
+explicit reopen after reload and the native unload warning after user interaction.
+Also verify keyboard and screen-reader behavior. Those rendered outcomes remain
+pending; the 2026-10-19 developer-reported resource checklist is separate manual
+evidence and does not establish the new lesson checks or HTTPS readiness.
 
 ## Verification evidence — 2026-10-19
 
