@@ -72,7 +72,11 @@ browser API-outage recovery was confirmed separately. Cookie, CORS/CSRF, HTTPS,
 component-rendering, and accessibility checks remain pending.
 Administrator curriculum resource management and active-only teacher browsing/detail
 are implemented. See [resource contracts, sample, and verification](docs/curriculum-resources.md);
-manual browser checks remain pending. Seeding, lesson workflows, and AI remain pending. See
+the developer reported its resource browser checklist complete on 2026-10-19.
+Teacher manual drafts, owned/version-checked saving and trusted resource selection,
+removal and explicit refresh are implemented; see [draft contracts and checks](docs/teacher-drafts.md).
+Draft browser checks, automated rendered tests and HTTPS verification remain pending.
+Seeding, submission validation/workflows, review/library/copying and AI remain pending. See
 `docs/domain-schema.md` and `docs/domain-schema-verification.md`.
 See `docs/frontend-authentication-verification.md` for frontend checks and the
 manual browser checklist.
@@ -121,3 +125,4 @@ and PDF export are outside the initial MVP.
 - `docs/frontend-authentication-verification.md` — frontend checks, startup, and browser checklist.
 
 - `docs/curriculum-resources.md` — resource contracts, original manual-entry sample, startup, browser checklist, and verification evidence.
+- `docs/teacher-drafts.md` — draft/source contracts, limits, concurrency, reconciliation, disposable tests and browser checklist.

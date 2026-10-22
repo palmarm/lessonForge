@@ -17,6 +17,7 @@ import type { AuthRequest } from './auth.types.js';
 export const PUBLIC = 'lessonforge:public';
 export const ROLES = 'lessonforge:roles';
 export const RESOURCE_ROUTE = 'lessonforge:resource-route';
+export const LESSON_ROUTE = 'lessonforge:lesson-route';
 export const AUTH_ROUTE = 'lessonforge:auth-route';
 export const LOGIN_ROUTE = 'lessonforge:login-route';
 export const Public = () => SetMetadata(PUBLIC, true);

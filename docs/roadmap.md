@@ -71,25 +71,31 @@ Remaining verification is tracked separately from these confirmed results.
 - [x] Enforce resource permissions and runtime validation in NestJS.
 - [x] Implement teacher browsing of active curriculum resources.
 - [x] Verify unauthorized resource changes are rejected in database-free unit/HTTP tests.
-- [ ] Complete the [manual teacher/administrator browser checklist](curriculum-resources.md#local-startup-and-manual-browser-verification).
+- [x] Complete the [manual teacher/administrator resource browser checklist](curriculum-resources.md#local-startup-and-manual-browser-verification) (developer-reported 2026-10-19; automated rendered and HTTPS tests remain pending).
 
 Demonstration: an administrator manages resources and a teacher browses the
 available demonstration material.
 
 ### 2. Teacher drafts
 
-- [ ] Implement transaction-time lesson ownership and workflow permissions.
-- [ ] Select resources and capture trusted snapshots in NestJS.
-- [ ] Preserve snapshots on ordinary saves; allow explicit refresh only from an active resource.
-- [ ] Create, edit, and save incomplete manual drafts.
-- [ ] Implement backend submission validation, including required fields and section timings.
-- [ ] Verify conflicting saves cannot silently overwrite work.
+- [x] Implement transaction-time lesson ownership and editable-state permissions for draft/content/source operations.
+- [x] Select/remove resources and capture trusted snapshots in NestJS.
+- [x] Preserve snapshots on ordinary saves; allow explicit refresh only from an active resource.
+- [x] Create, list, view, edit, and save incomplete manual drafts with bounded structural validation.
+- [x] Verify conflicting content/source saves cannot silently overwrite work in database-free and disposable PostgreSQL tests.
+- [x] Implement the teacher draft editor with explicit uncertainty/conflict reconciliation and identity isolation.
+- [x] Correct creation candidate reconciliation and add observed lifecycle lock-wait coverage; clarify resource browsing versus lesson editing and saved/unsaved content (2026-10-21; see [correction evidence](teacher-drafts.md#correction-verification-2026-10-21)).
+- [ ] Complete the [teacher draft browser checklist](teacher-drafts.md#local-checks-and-browser-checklist) and automated rendered interaction coverage.
+
+Draft validity is implemented; submission completeness validation remains in
+milestone 3. See [contracts, checks and gaps](teacher-drafts.md). No schema change.
 
 Demonstration: a teacher selects resources and saves a draft, with unauthorized
-edits rejected and validation feedback available before submission.
+edits rejected and draft validation feedback. Submission validation is deferred.
 
 ### 3. Review and approved library
 
+- [ ] Implement backend submission completeness validation, including required fields, sources and section timings.
 - [ ] Submit validated lessons and preserve immutable submitted revisions and source snapshots.
 - [ ] Implement administrator review of the exact submitted revision.
 - [ ] Request changes with feedback.
@@ -159,8 +165,10 @@ then obtain administrator review. AI is required for the full MVP acceptance cri
 ## Session notes
 
 The earlier next-task notes below are historical. Curriculum resource management
-and browsing are implemented; the browser checklist remains pending. Next feature
-work is teacher drafts (milestone 2); infrastructure preparation may proceed alongside it.
+and browsing are implemented; resource browser completion was developer-reported
+on 2026-10-19. Teacher drafts are now implemented; draft browser/rendered checks
+remain pending. Next feature work is submission completeness/workflows (milestone 3);
+infrastructure preparation may proceed alongside it.
 
 At the end of each session, record:
 
@@ -265,5 +273,16 @@ transactions, and Tailwind controls. Resource state is isolated per authenticate
 workspace; conflicts and uncertain writes preserve entered text and require explicit
 reconciliation. The existing schema/migrations and development database are unchanged.
 See [resource contracts and verification](curriculum-resources.md) for practical
-limits, original sample text, actual checks, live isolation, and the pending browser
-checklist. Teacher draft selection/snapshots and lesson workflows remain pending.
+limits, original sample text, actual checks, live isolation, and the developer-reported
+2026-10-19 resource browser completion. Automated rendered and HTTPS checks remain pending.
+
+## Teacher drafts — 2026-10-19
+
+Implemented teacher-only owned manual draft create/list/detail/content save and
+resource select/remove/refresh, with transaction-time lifecycle/ownership/version
+checks, resource locking, trusted retained snapshots and bounded incomplete JSON.
+Saving creates no revision. The frontend retains unsaved text through failures,
+requires explicit reconciliation/version adoption, pauses unconfirmed sessions and
+invalidates old responses. No dependencies, schema/migrations, submission, review,
+copying, AI or deletion endpoints were added. See [actual verification and local
+steps](teacher-drafts.md). Draft browser/rendered tests and HTTPS remain pending.

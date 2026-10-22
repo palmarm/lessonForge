@@ -54,7 +54,7 @@ npm run build
 ```
 
 `typecheck` generates Next.js route types before TypeScript checks. Node 24's
-built-in runner tests authentication/resource APIs and state with mocked fetch;
+built-in runner tests authentication/resource/lesson APIs and state with mocked fetch;
 no browser, database, or additional test package is required. CI provides the
 public fixture origin `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`; builds do
 not contact that API. The existing production build uses Turbopack and fetches
@@ -85,9 +85,10 @@ and HTTP tests replace database access and mock environment loading where needed
 No PostgreSQL service, repository secrets, or real credentials are needed.
 
 The workflow never invokes `test:db`, `test:constraints`, `test:auth:db`, `test:accounts:db`,
-`test:resources:db`, session cleanup, migrations, Docker Compose, API startup, or deployment. HTTP end-to-end
+`test:resources:db`, `test:lessons:db`, session cleanup, migrations, Docker Compose, API startup, or deployment. HTTP end-to-end
 tests cover the scaffold, real authentication/role guards, cookie handling,
 exact-origin CORS/CSRF, rate limits, resource roles/visibility/validation/conflicts,
+teacher draft ownership/contracts/validation and trusted source actions,
 and shutdown with substituted database access.
 Unit tests include real native Argon2 hash/verify. They do not prove live database
 connectivity or domain workflows. Live database evidence remains in the
@@ -97,6 +98,12 @@ database; see [domain verification](domain-schema-verification.md). Generation
 with models still requires no database URL or live PostgreSQL service. Resource
 persistence, competing mutations, rollback, and retained snapshots are verified
 separately through the [guarded resource suite](curriculum-resources.md#separate-live-postgresql-suite).
+Draft persistence, competing saves/source mutations, resource-lock coordination,
+snapshot retention and rollback use the separate
+[guarded lesson suite](teacher-drafts.md#separate-live-postgresql-suite). Live tests
+remain outside CI. Frontend request/state tests do not establish rendered controls
+or HTTPS/browser session behavior; resource checklist completion reported on
+2026-10-19 is manual developer evidence only.
 
 Dependency installation, Node setup, Prisma engine availability, and uncached
 Google Fonts builds need network access. npm caching reduces downloads but does

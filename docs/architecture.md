@@ -24,7 +24,10 @@ The developer confirmed an unchanged provisioning rerun on `lessonforge_dev` on
 authentication and API-outage recovery are developer-confirmed; remaining browser checks are in
 [frontend verification](frontend-authentication-verification.md). Curriculum resource
 management/browsing is implemented; see [resource contracts](curriculum-resources.md).
-Resource seeding and lesson workflow services remain pending; see
+Teacher drafts and resource selection/snapshot preservation/refresh are implemented;
+see [draft contracts and verification](teacher-drafts.md). Resource browser completion
+was developer-reported on 2026-10-19. Resource seeding, submission validation and
+submission/review/library/copy workflows remain pending; see
 [domain verification](domain-schema-verification.md).
 
 ## 1. Technology choices
@@ -82,6 +85,17 @@ untouched. Its [contracts and verification](curriculum-resources.md) document li
 errors, and frontend reconciliation. Resource HTTP bodies have a separate 128 KiB
 budget; authentication retains 4 KiB. The frontend shares the validated credentialed
 transport with authentication and isolates resource state by authenticated workspace.
+
+The lessons module implements teacher-owned editable drafts without creating
+submitted revisions. Content/source writes share an expected lesson version and
+lesson row lock, with ownership/lifecycle checked in the transaction. Selection
+and explicit refresh then hold a resource share lock against edits/retirement
+before capturing trusted full snapshots; content saves preserve them. Lesson
+bodies use 128 KiB parsing, content is bounded to 64 KiB, and up to five sources
+are retained. The frontend draft workspace reuses credentialed transport and
+requires explicit reconciliation/version adoption while preserving entered text.
+Unconfirmed auth pauses it and invalidates pending responses; confirmed identity
+changes clear it. See [contracts and limits](teacher-drafts.md).
 
 Organize the backend into feature modules:
 authentication, users, resources, lessons, reviews, and AI.
@@ -163,7 +177,9 @@ newer actions, and cookie-changing requests cannot overlap. Server Components
 render a public shell without cookie forwarding or personalized caching.
 Basic browser authentication and API-outage recovery are developer-confirmed.
 Cookie, CORS/CSRF, HTTPS, component-rendering, and accessibility checks remain
-pending, as does transaction-time ownership/workflow enforcement. See
+pending as automated/deployed evidence. Transaction-time ownership and editable
+lifecycle checks are implemented for drafts; submission/review workflow services
+remain pending. See
 [frontend verification](frontend-authentication-verification.md),
 [design](authentication-design.md) and
 [verification](authentication-verification.md).
@@ -198,9 +214,11 @@ Deployment must account for cookie settings, HTTPS, CSRF protection, and the rel
 
 The [domain schema design](domain-schema.md) separates proposed database constraints
 from NestJS validation and transactional concurrency rules. These mechanisms are
-implemented in models and initial migration SQL where applicable. Authorization,
-content/timing validation, lifecycle transitions, trusted snapshot handling,
-latest-revision checks, and concurrency transactions still need NestJS services.
+implemented in models and initial migration SQL where applicable. Submission/review
+authorization, completeness/timing validation, lifecycle transitions, latest-revision
+checks and approved-copy services remain pending. Draft structural validation,
+ownership/lifecycle/version transactions and trusted draft snapshot handling are
+implemented in the lessons module.
 Immutable-row triggers do not prevent a later source-row INSERT; finalized source
 sets remain a backend responsibility. See [domain verification](domain-schema-verification.md).
 

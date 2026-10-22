@@ -1,4 +1,5 @@
 import { ResourcesPanel } from "@/components/resources-panel";
+import { LessonsPanel } from "@/components/lessons-panel";
 import { AuthPanel } from "@/components/auth-panel";
 import { AuthProvider } from "@/components/auth-provider";
 
@@ -15,6 +16,7 @@ export default function Home() {
       </header>
       <AuthProvider>
         <AuthPanel />
+        <LessonsPanel />
         <ResourcesPanel />
       </AuthProvider>
     </main>

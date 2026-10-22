@@ -221,8 +221,12 @@ developer separately confirmed both migrations applied, up-to-date Prisma status
 (exit 0), development connectivity, build/compiled startup, the expected root/me
 responses, prompt Ctrl+C, and session cleanup deleting zero invalid records (exit 0).
 The developer confirmed an unchanged provisioning rerun on 2026-10-13. Frontend
-login/current-user handling is implemented; manual browser verification,
-seeding, and workflow services remain pending.
+login/current-user handling is implemented. Resource browser checklist completion
+was developer-reported on 2026-10-19. Teacher manual drafts with trusted resource
+selection/removal/refresh are implemented without new migrations or packages;
+see [draft contracts, local checks and browser checklist](teacher-drafts.md).
+Draft browser checks, automated rendered/HTTPS verification, seeding and
+submission/review/library/copy workflow services remain pending.
 
 Applying tracked migrations is still a separate manual step for a newly
 initialized development database; Compose and API startup do not apply them.

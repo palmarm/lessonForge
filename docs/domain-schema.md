@@ -10,8 +10,10 @@ is implemented separately in [authentication design](authentication-design.md);
 Both migrations are developer-confirmed applied as of 2026-10-13. Safe local account
 provisioning and frontend sign-in are implemented; developer authentication evidence
 is recorded separately. Curriculum resource management/browsing is implemented in
-[resource contracts](curriculum-resources.md); seeding and lesson workflow services
-remain pending. The
+[resource contracts](curriculum-resources.md). Teacher draft creation/list/detail,
+owned/version-checked saving, trusted resource selection/removal and explicit
+refresh are implemented without schema changes; see [draft contracts](teacher-drafts.md).
+Seeding, submission validation and submission/review/library/copy services remain pending. The
 [project specification](project-specification.md) is authoritative, particularly
 sections 2–8. The [architecture](architecture.md) assigns authorization,
 validation, and transactions to NestJS. The [roadmap](roadmap.md) places the manual
@@ -424,8 +426,9 @@ These decisions are developer-confirmed product policy, not open questions.
 The four original product questions are resolved. No blocking product question
 remains for this initial design. Exact resource text is seed preparation work;
 session storage, password hashing, and authentication payload bounds are now
-resolved in [authentication design](authentication-design.md). Lesson payload bounds
-remain choices for the workflow services. Prisma models and the reviewed initial
+resolved in [authentication design](authentication-design.md). Draft payload bounds
+are documented in [draft contracts](teacher-drafts.md#draft-structure-and-bounds);
+submission completeness validation remains pending. Prisma models and the reviewed initial
 migration SQL are implemented; the developer confirmed application to the
 development database on 2026-10-09. Future schema changes require new migrations.
 
@@ -464,13 +467,15 @@ and design first. None is assumed here or needed for the documented MVP.
    Safe local account provisioning and frontend login/current-user handling are
    implemented separately. The developer confirmed an unchanged provisioning
    rerun on 2026-10-13. Basic browser authentication and outage recovery are confirmed;
-   remaining browser checks and transaction-time lesson ownership checks remain pending.
+   remaining automated rendered/HTTPS checks remain pending. Transaction-time draft
+   ownership checks are now implemented separately in the lessons module.
    Original sample resource text is now documented for manual administrator entry;
    no development seeding was performed.
 4. Administrator resource management/browsing, retirement rules, and resource
-   conflict handling are implemented. Next implement teacher draft creation, save,
-   source selection, and explicit refresh.
-   Test incomplete drafts and unauthorized access before adding submission.
+   conflict handling are implemented. Teacher draft creation/list/detail/save,
+   source selection/removal and explicit refresh are now implemented and tested
+   for incomplete content, unauthorized access, concurrency and rollback; see
+   [draft verification](teacher-drafts.md). No submission completeness claim.
 5. Implement validated submission, immutable revisions/sources, history retrieval,
    and pending-review queries in transactions.
 6. Implement request changes, resubmission, approval, approved-library browsing,
@@ -482,7 +487,8 @@ Storage implementation and disposable migration verification are recorded in
 the [verification guide](domain-schema-verification.md). These results do not
 establish authentication by themselves; separate
 [authentication verification](authentication-verification.md) records that work.
-Lesson APIs and lifecycle transactions remain pending.
+Draft APIs and transaction-time editable-state/version checks are implemented.
+Submission/review/library/copy lifecycle services and draft browser checks remain pending.
 
 ## Acceptance examples for implementation
 

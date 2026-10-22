@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 export function canonicalEmail(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.length > 254) return undefined;
   const email = value.trim().toLowerCase();
+  // https://html.spec.whatwg.org/multipage/input.html#valid-e-mail-address
   if (
     !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(
       email,
