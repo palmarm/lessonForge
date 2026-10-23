@@ -21,6 +21,36 @@ const defaults = {
   login: async () => identity,
   logout: async () => {},
 };
+test("confirmed session end disposes identity immediately and rejects old restoration", async () => {
+  const old = deferred();
+  const session = createAuthSession({ ...defaults, me: () => old.promise });
+  const reading = session.restore();
+  session.endSession();
+  old.resolve(identity);
+  await reading;
+  assert.equal(session.getSnapshot().identity, null);
+  assert.equal(session.getSnapshot().status, "unauthenticated");
+});
+
+test("session expiry during a cookie change never revives identity or overlaps login", async () => {
+  for (const fails of [false, true]) {
+    const old = deferred();
+    let calls = 0;
+    const session = createAuthSession({ ...defaults, login: () => { calls++; return old.promise; } });
+    await session.restore();
+    const signingIn = session.login("teacher@example.test", "fixture");
+    session.endSession();
+    assert.equal(session.getSnapshot().identity, null);
+    assert.equal(session.getSnapshot().pending, "login");
+    await session.login("another@example.test", "fixture");
+    assert.equal(calls, 1);
+    if (fails) old.reject(unavailable());
+    else old.resolve(identity);
+    await signingIn;
+    assert.equal(session.getSnapshot().identity, null);
+    assert.equal(session.getSnapshot().pending, null);
+  }
+});
 function deferred() {
   let resolve, reject;
   const promise = new Promise((yes, no) => {

@@ -126,3 +126,5 @@ and PDF export are outside the initial MVP.
 
 - `docs/curriculum-resources.md` — resource contracts, original manual-entry sample, startup, browser checklist, and verification evidence.
 - `docs/teacher-drafts.md` — draft/source contracts, limits, concurrency, reconciliation, disposable tests and browser checklist.
+- `docs/ui/README.md` — index for frontend integration and design documentation.
+- `docs/ui/frontend-design-integration.md` — Phase 1 shared frontend design, navigation/session protection, verification and remaining manual checks.

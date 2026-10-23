@@ -6,6 +6,11 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useAuth } from "./auth-provider";
+import {
+  useWorkspaceNavigation,
+  useWorkspaceProtection,
+} from "./workspace-navigation";
+import { LabeledTextarea } from "./ui-controls";
 import { createLessonsApi, type DraftContent } from "@/lib/lessons-api";
 import { createResourcesApi } from "@/lib/resources-api";
 import {
@@ -14,10 +19,8 @@ import {
   initialLessonState,
 } from "@/lib/lessons-state";
 
-const button =
-  "rounded-lg border border-slate-500 bg-white px-4 py-2 text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-50";
-const input =
-  "mt-1 w-full rounded-lg border border-slate-400 bg-white p-2 text-slate-900";
+const button = "button";
+const input = "field mt-1";
 export function LessonsPanel() {
   const auth = useAuth();
   if (!auth.identity || auth.identity.user.role !== "TEACHER") return null;
@@ -35,7 +38,7 @@ export function LessonsPanel() {
         <LessonsWorkspace
           key={`${auth.identity.user.id}:${auth.identity.user.role}:${auth.identity.expiresAt}`}
           paused={paused}
-          sessionEnded={() => void auth.restore()}
+          sessionEnded={auth.endSession}
         />
       </fieldset>
     </div>
@@ -74,15 +77,15 @@ function LessonsWorkspace({
   const locked = busy || !!state.uncertain || state.blocked;
   const form = state.form;
   const unsaved = hasUnsavedLessonContent(state);
-  useEffect(() => {
-    if (!unsaved && !state.uncertain && state.pending !== "write") return;
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
+  const navigation = useWorkspaceNavigation();
+  useWorkspaceProtection(() => {
+    const current = store.getSnapshot();
+    return {
+      dirty: hasUnsavedLessonContent(current),
+      blocked: current.pending === "write" || !!current.uncertain,
+      paused,
     };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [unsaved, state.uncertain, state.pending]);
+  });
   const change = (patch: Partial<DraftContent>) => {
     if (form) store.field({ ...form, ...patch });
   };
@@ -94,17 +97,15 @@ function LessonsWorkspace({
     id?: string,
   ) {
     return (
-      <label className="block space-y-1 font-medium">
-        {label}
-        <textarea
-          id={id}
-          className={input}
-          value={value ?? ""}
-          maxLength={maxLength}
-          rows={3}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      </label>
+      <LabeledTextarea
+        label={label}
+        id={id}
+        className={input}
+        value={value ?? ""}
+        maxLength={maxLength}
+        rows={3}
+        onChange={(e) => onChange(e.target.value)}
+      />
     );
   }
   function minutes(
@@ -133,7 +134,7 @@ function LessonsWorkspace({
     <section
       aria-labelledby="drafts-heading"
       aria-busy={busy}
-      className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-sm"
+      className="workspace-panel space-y-5"
     >
       <h2 id="drafts-heading" className="text-2xl font-semibold">
         My lesson drafts
@@ -394,7 +395,9 @@ function LessonsWorkspace({
           <button
             className={button}
             disabled={busy || !!state.uncertain}
-            onClick={store.close}
+            onClick={() => {
+              if (navigation.requestLeave("discard")) store.close();
+            }}
           >
             Close editor and discard unsaved text
           </button>

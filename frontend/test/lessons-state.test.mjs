@@ -50,6 +50,24 @@ function fixture(sessionEnded) {
   };
   return { api, calls, store: createLessonsState(api, sessionEnded) };
 }
+test("a new failed list read invalidates candidate acknowledgement and creation no-match eligibility", async () => {
+  const { store, api } = fixture();
+  store.create();
+  api.create = async () => { throw new AuthApiError("unavailable", "Unknown outcome"); };
+  await store.save();
+  await store.reconcile();
+  await store.inspectCreation(id);
+  assert.equal(store.getSnapshot().reconciled, true);
+  api.list = async () => { throw new AuthApiError("unavailable", "Read failed"); };
+  await store.list();
+  store.acknowledge();
+  store.confirmCreationNotFound();
+  assert.equal(store.getSnapshot().reconciled, false);
+  assert.equal(store.getSnapshot().latest, null);
+  assert.equal(store.getSnapshot().creationListChecked, false);
+  assert.ok(store.getSnapshot().uncertain);
+});
+
 test("content and base version survive validation, conflict and availability failures; reconciliation is explicit", async () => {
   for (const reason of [
     "rejected",

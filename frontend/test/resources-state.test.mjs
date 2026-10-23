@@ -46,6 +46,76 @@ function fixture(role = "ADMIN", sessionEnded) {
   };
   return { api, calls, store: createResourcesState(api, role, sessionEnded) };
 }
+test("authentication pause retains admin edits, invalidates late writes and requires exact reconciliation", async () => {
+  for (const fails of [false, true]) {
+    const { store, api } = fixture();
+    await store.view(id);
+    store.edit();
+    store.field("title", "Retained admin text");
+    const late = deferred();
+    let writes = 0;
+    api.edit = () => { writes++; return late.promise; };
+    const writing = store.save();
+    store.pause(true);
+    assert.deepEqual(store.getSnapshot().uncertain, { type: "edit", targetId: id });
+    assert.equal(store.getSnapshot().pending, null);
+    store.field("title", "Must not change");
+    store.cancel();
+    store.useLatestVersion();
+    store.acknowledge();
+    await store.save();
+    await store.reconcile();
+    assert.equal(store.getSnapshot().reconciled, false);
+    store.pause(false);
+    if (fails) late.reject(new Error("Old failure"));
+    else late.resolve({ ...resource, title: "Old success", version: 2 });
+    await writing;
+    assert.equal(store.getSnapshot().form.title, "Retained admin text");
+    assert.equal(store.getSnapshot().baseVersion, 1);
+    await store.save();
+    assert.equal(writes, 1);
+    await store.list();
+    assert.equal(store.getSnapshot().reconciled, false);
+    await store.reconcile();
+    assert.equal(store.getSnapshot().reconciled, true);
+    store.pause(true);
+    store.acknowledge();
+    store.pause(false);
+    assert.equal(store.getSnapshot().reconciled, false);
+    assert.ok(store.getSnapshot().uncertain);
+    await store.reconcile();
+    store.acknowledge();
+    assert.equal(store.getSnapshot().uncertain, null);
+  }
+});
+
+test("authentication pause invalidates late admin reads and identity disposal rejects their results", async () => {
+  for (const dispose of [false, true]) {
+    const { store, api } = fixture();
+    const late = deferred();
+    api.detail = () => late.promise;
+    const reading = store.view(id);
+    if (dispose) store.dispose();
+    else { store.pause(true); store.pause(false); }
+    late.resolve(resource);
+    await reading;
+    assert.equal(store.getSnapshot().selected, null);
+  }
+});
+
+test("a failed ordinary list read revokes earlier uncertainty acknowledgement eligibility", async () => {
+  const { store, api } = fixture();
+  store.create();
+  api.create = async () => { throw new AuthApiError("unavailable", "Unknown outcome"); };
+  await store.save();
+  await store.reconcile();
+  assert.equal(store.getSnapshot().reconciled, true);
+  api.list = async () => { throw new AuthApiError("unavailable", "Read failed"); };
+  await store.list();
+  store.acknowledge();
+  assert.equal(store.getSnapshot().reconciled, false);
+  assert.ok(store.getSnapshot().uncertain);
+});
 test("teacher state browses, prevents mutations, and refuses retired response data", async () => {
   const { store, api, calls } = fixture("TEACHER");
   await store.view(id);
