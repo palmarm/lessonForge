@@ -96,7 +96,7 @@ export function createLessonsState(
       pending: operation ? "write" : "read",
       error: null,
       notice: null,
-      ...(reconciling
+      ...(reconciling || (!operation && state.uncertain)
         ? { reconciled: false, latest: null, creationListChecked: false }
         : {}),
     });
@@ -159,6 +159,9 @@ export function createLessonsState(
         controller?.abort();
         update({
           pending: null,
+          reconciled: false,
+          latest: null,
+          creationListChecked: false,
           ...(activeWrite
             ? {
                 uncertain: activeWrite,
@@ -172,7 +175,10 @@ export function createLessonsState(
       }
     },
     list: (after?: string) =>
-      run(null, async (signal) => ({ ...(await api.list(after, signal)) })),
+      run(null, async (signal) => ({
+        ...(await api.list(after, signal)),
+        creationListChecked: state.uncertain?.type === "create",
+      })),
     resources: (after?: string) =>
       run(null, async (signal) => {
         if (!resources) return {};

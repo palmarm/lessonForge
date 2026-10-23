@@ -15,6 +15,7 @@ type AuthContextValue = AuthSnapshot & {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   restore: () => Promise<void>;
+  endSession: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -34,6 +35,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return session.invalidate;
   }, [session]);
 
+  useEffect(() => {
+    if (!snapshot.identity) return;
+    const expiresAt = Date.parse(snapshot.identity.expiresAt);
+    let timer: ReturnType<typeof setTimeout>;
+    const check = () => {
+      clearTimeout(timer);
+      const remaining = expiresAt - Date.now();
+      if (remaining <= 0) session.endSession();
+      else timer = setTimeout(check, Math.min(remaining, 2_147_483_647));
+    };
+    check();
+    // A background tab's timers can be throttled: recheck on return as well.
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [session, snapshot.identity]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -41,6 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login: session.login,
         logout: session.logout,
         restore: session.restore,
+        endSession: session.endSession,
       }}
     >
       {children}

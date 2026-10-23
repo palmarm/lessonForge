@@ -1,37 +1,60 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useAuth } from "./auth-provider";
+import { useWorkspaceNavigation } from "./workspace-navigation";
+import { Button, Input } from "./ui-controls";
 
-const buttonStyle =
-  "rounded-lg bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-slate-700 disabled:cursor-wait disabled:opacity-60";
-const inputStyle =
-  "mt-2 w-full rounded-lg border border-slate-400 bg-white px-3 py-3 text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 disabled:opacity-60";
+const buttonStyle = "button";
+const inputStyle = "mt-2";
 
 export function AuthPanel() {
   const auth = useAuth();
+  const { requestLeave } = useWorkspaceNavigation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const pending = auth.pending !== null;
+  const [visible, setVisible] = useState(false);
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>(
+    {},
+  );
+  const heading = useRef<HTMLHeadingElement>(null);
+  const emailField = useRef<HTMLInputElement>(null);
+  const summary = useRef<HTMLDivElement>(null);
+  const pending = auth.pending !== null || auth.status === "loading";
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
     const submittedPassword = password;
     setPassword("");
+    setVisible(false);
+    const next = {
+      ...(!email.trim() || !emailField.current?.validity.valid
+        ? { email: "Enter a valid email address." }
+        : {}),
+      ...(!submittedPassword ? { password: "Enter your password." } : {}),
+    };
+    setErrors(next);
+    if (Object.keys(next).length) {
+      requestAnimationFrame(() => summary.current?.focus());
+      return;
+    }
     void auth.login(email, submittedPassword);
   }
 
   return (
     <section
       aria-labelledby="auth-heading"
-      className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
+      className="workspace-panel max-w-lg"
     >
-      <h2 id="auth-heading" className="text-2xl font-semibold text-slate-900">
+      <h1 ref={heading} tabIndex={-1} id="auth-heading" className="page-title">
         {auth.identity ? "Your account" : "Sign in"}
-      </h2>
-      <p id="auth-status" role="status" className="mt-3 text-slate-600">
+      </h1>
+      <p id="auth-status" role="status" className="mt-3 text-neutral-600">
         {auth.pending === "login"
           ? "Signing in…"
           : auth.pending === "logout"
@@ -42,31 +65,41 @@ export function AuthPanel() {
                 ? auth.identity
                   ? "We could not confirm the latest request. Your last confirmed account is shown."
                   : "We could not confirm your session. Check your session or try signing in again."
-                : auth.identity
-                  ? "You are signed in to LessonForge."
-                  : "Sign in with your teacher or administrator account."}
+                : auth.notice
+                  ? auth.notice
+                  : auth.identity
+                    ? "You are signed in to LessonForge."
+                    : "Sign in with your teacher or administrator account."}
       </p>
       {auth.error && (
-        <p
-          id="auth-error"
-          role="alert"
-          className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-800"
-        >
+        <p id="auth-error" role="alert" className="feedback mt-4">
           {auth.error}
         </p>
+      )}
+      {Object.keys(errors).length > 0 && (
+        <div ref={summary} tabIndex={-1} role="alert" className="feedback mt-4">
+          <p className="font-semibold">Check your sign-in details</p>
+          {Object.entries(errors).map(([field, error]) => (
+            <p key={field}>
+              <a href={`#login-${field}`} className="text-link">
+                {error}
+              </a>
+            </p>
+          ))}
+        </div>
       )}
 
       {auth.identity ? (
         <div className="mt-6 space-y-4">
-          <dl className="space-y-3 text-slate-900">
+          <dl className="space-y-3 text-neutral-900">
             <div>
-              <dt className="text-sm text-slate-600">Name</dt>
+              <dt className="text-sm text-neutral-600">Name</dt>
               <dd className="break-words font-medium">
                 {auth.identity.user.displayName}
               </dd>
             </div>
             <div>
-              <dt className="text-sm text-slate-600">Role</dt>
+              <dt className="text-sm text-neutral-600">Role</dt>
               <dd>
                 {auth.identity.user.role === "ADMIN"
                   ? "Administrator"
@@ -77,7 +110,9 @@ export function AuthPanel() {
           <button
             type="button"
             className={buttonStyle}
-            onClick={() => void auth.logout()}
+            onClick={() => {
+              if (requestLeave(true)) void auth.logout();
+            }}
             disabled={pending || auth.status === "loading"}
             aria-describedby={auth.error ? "auth-error" : "auth-status"}
           >
@@ -86,16 +121,18 @@ export function AuthPanel() {
         </div>
       ) : auth.status !== "loading" ? (
         <form
+          noValidate
           onSubmit={submit}
           aria-busy={pending}
           aria-describedby={auth.error ? "auth-error" : "auth-status"}
           className="mt-6 space-y-5"
         >
           <div>
-            <label htmlFor="login-email" className="font-medium text-slate-900">
+            <label htmlFor="login-email" className="font-medium text-neutral-900">
               Email
             </label>
-            <input
+            <Input
+              ref={emailField}
               id="login-email"
               name="email"
               type="email"
@@ -104,30 +141,46 @@ export function AuthPanel() {
               spellCheck={false}
               inputMode="email"
               required
+              maxLength={254}
+              aria-invalid={!!errors.email}
+              aria-describedby={errors.email ? "email-error" : undefined}
               className={inputStyle}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               disabled={pending}
             />
+            {errors.email && <p id="email-error">{errors.email}</p>}
           </div>
           <div>
             <label
               htmlFor="login-password"
-              className="font-medium text-slate-900"
+              className="font-medium text-neutral-900"
             >
               Password
             </label>
-            <input
+            <Input
               id="login-password"
               name="password"
-              type="password"
+              type={visible ? "text" : "password"}
               autoComplete="current-password"
               required
+              aria-invalid={!!errors.password}
+              aria-describedby={errors.password ? "password-error" : undefined}
               className={inputStyle}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               disabled={pending}
             />
+            <Button
+              className="mt-2"
+              disabled={pending}
+              aria-controls="login-password"
+              aria-pressed={visible}
+              onClick={() => setVisible(!visible)}
+            >
+              {visible ? "Hide password" : "Show password"}
+            </Button>
+            {errors.password && <p id="password-error">{errors.password}</p>}
           </div>
           <button
             type="submit"
@@ -142,7 +195,7 @@ export function AuthPanel() {
         <button
           type="button"
           onClick={() => void auth.restore()}
-          className="mt-4 rounded text-sm font-medium text-slate-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-slate-700"
+          className="button mt-4"
         >
           Check session again
         </button>

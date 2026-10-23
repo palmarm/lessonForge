@@ -51,6 +51,17 @@ const content = (v: ResourceContent): ResourceContent => ({
   contentText: v.contentText,
 });
 
+export function hasUnsavedResourceContent(state: ResourceState): boolean {
+  return (
+    state.form !== null &&
+    (!state.editId ||
+      !state.selected ||
+      state.selected.id !== state.editId ||
+      JSON.stringify(content(state.form)) !==
+        JSON.stringify(content(state.selected)))
+  );
+}
+
 // One store per authenticated workspace. It never retries a write or rebases edits implicitly.
 export function createResourcesState(
   api: ResourcesApi,
@@ -60,6 +71,8 @@ export function createResourcesState(
   let state = initialResourceState;
   let generation = 0;
   let alive = true;
+  let paused = false;
+  let activeWrite: ResourceWrite | null = null;
   let controller: AbortController | undefined;
   const listeners = new Set<() => void>();
   const update = (patch: Partial<ResourceState>) => {
@@ -73,22 +86,24 @@ export function createResourcesState(
   ) {
     if (
       !alive ||
+      paused ||
       state.pending === "write" ||
       (operation && (role !== "ADMIN" || state.pending || state.uncertain))
     )
       return;
     const current = ++generation;
+    activeWrite = operation;
     controller?.abort();
     controller = new AbortController();
     update({
       pending: operation ? "write" : "read",
       error: null,
       notice: null,
-      ...(reconciling ? { reconciled: false } : {}),
+      ...(reconciling || (!operation && state.uncertain) ? { reconciled: false } : {}),
     });
     try {
       const patch = await request(controller.signal);
-      if (!alive || generation !== current) return;
+      if (!alive || paused || generation !== current) return;
       // Defense against a malformed/misconfigured API leaking retired records into teacher views.
       if (
         role === "TEACHER" &&
@@ -99,8 +114,10 @@ export function createResourcesState(
           "Unexpected resource visibility. Check your session.",
         );
       update({ ...patch, pending: null });
+      activeWrite = null;
     } catch (error) {
-      if (!alive || generation !== current) return;
+      if (!alive || paused || generation !== current) return;
+      activeWrite = null;
       const uncertain =
         operation !== null &&
         (!(error instanceof AuthApiError) ||
@@ -141,7 +158,28 @@ export function createResourcesState(
       alive = false;
       generation++;
       controller?.abort();
+      activeWrite = null;
       state = initialResourceState;
+    },
+    pause: (value: boolean) => {
+      if (paused === value) return;
+      paused = value;
+      if (value) {
+        generation++;
+        controller?.abort();
+        update({
+          pending: null,
+          reconciled: false,
+          ...(activeWrite
+            ? {
+                uncertain: activeWrite,
+                notice:
+                  "Session changed during a write. Reconcile its result before continuing.",
+              }
+            : {}),
+        });
+        activeWrite = null;
+      }
     },
     list: (after?: string) =>
       run(null, async (signal) => ({
@@ -156,6 +194,7 @@ export function createResourcesState(
         return Promise.resolve();
       return run(null, async (signal) => ({
         selected: await api.detail(id, signal),
+        reconciled: state.uncertain?.type === "create",
       }));
     },
     reconcile: () => {
@@ -186,7 +225,13 @@ export function createResourcesState(
       );
     },
     create: () => {
-      if (alive && role === "ADMIN" && !state.pending && !state.uncertain)
+      if (
+        alive &&
+        !paused &&
+        role === "ADMIN" &&
+        !state.pending &&
+        !state.uncertain
+      )
         update({
           selected: null,
           form: blankResource(),
@@ -199,6 +244,7 @@ export function createResourcesState(
     edit: () => {
       if (
         alive &&
+        !paused &&
         role === "ADMIN" &&
         state.selected &&
         !state.selected.retiredAt &&
@@ -217,16 +263,17 @@ export function createResourcesState(
       key: "title" | "sourceReference" | "contentText",
       value: string,
     ) => {
-      if (alive && state.form && !state.pending)
+      if (alive && !paused && state.form && !state.pending)
         update({ form: { ...state.form, [key]: value } });
     },
     cancel: () => {
-      if (alive && !state.pending && !state.uncertain)
+      if (alive && !paused && !state.pending && !state.uncertain)
         update({ form: null, editId: null, baseVersion: null, error: null });
     },
     useLatestVersion: () => {
       if (
         alive &&
+        !paused &&
         !state.pending &&
         !state.uncertain &&
         state.form &&
@@ -241,7 +288,13 @@ export function createResourcesState(
         });
     },
     acknowledge: () => {
-      if (alive && !state.pending && state.uncertain && state.reconciled)
+      if (
+        alive &&
+        !paused &&
+        !state.pending &&
+        state.uncertain &&
+        state.reconciled
+      )
         update({
           uncertain: null,
           reconciled: false,
