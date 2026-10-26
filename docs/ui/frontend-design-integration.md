@@ -1,7 +1,185 @@
-# Frontend design integration — Phase 1
+# Frontend design integration — Phases 1 and 2
 
 This guide is in `docs/ui/`, the location for future frontend integration and
 design documentation.
+
+## Phase 2 — resource browsing and management (2026-10-26)
+
+Preparation matched the request: branch `feat/frontend-design-resources`, clean
+working tree and empty index, with the Phase 1 shell, persistent workspaces,
+shared controls and independently corrected R1 navigation guard present. No
+branch operation, fetch, repository cleanup, staging or commit was performed.
+The Phase 1 record below is historical; its deferred manual checks remain pending.
+Phase 2 stops here for commit review; Phase 3 is unimplemented. The
+[independent Phase 2 review](phase-2-review.md) found no commit blockers. Its
+non-blocking heading hierarchy issue is corrected in the
+[R1 follow-up](phase-2-review.md#r1-heading-correction-follow-up). Resource card and
+editor headings are `h2`; teacher detail sections are `h2`, while administrator
+detail subsections and retirement confirmation are `h3` beneath its resource
+title. Visual classes and behavior are unchanged. Manual acceptance remains pending.
+
+### Changes and design rationale
+
+- `/resources` renders server summaries as neutral resource cards. Only API title,
+  subject, grade, active/retired status, version and update timestamp are used.
+  Existing `limit=20`, `after` and `nextAfter` pagination remains authoritative;
+  Next page replaces the current page and Reload list returns to the first page.
+- `/resources/[id]` loads exact UUID detail independently of list data. The
+  persistent workspace owns the page heading, including the loaded API title.
+  Reload resource offers explicit read recovery. Pending or failed teacher reads
+  hide previously loaded detail, including when a resource becomes unavailable.
+  Content and citation render as plain text. No fictional descriptions, extra
+  sections, static detail paths, citation fetching or preview data were added.
+- `/admin/resources` keeps list/detail/create/edit views local to its mounted,
+  session-keyed store. Cards, read-only metadata, fixed subject/grade fields,
+  labeled content fields, sticky status/save controls, focused error messages,
+  success notices and retirement confirmation use the Phase 1 visual system.
+  Back to resource list goes through the leave policy; the new store `close`
+  action refuses entered, pending, uncertain and paused work.
+- Retirement confirms the currently viewed version. Retired detail is read-only
+  and explains that existing lesson snapshots are unchanged. Comparison reads
+  keep entered text and the original version visible; adoption and subsequent
+  saves remain explicit. If a comparison discovers retirement, retained editing
+  controls and saving are disabled rather than replacing the entered text.
+- Unknown-ID creation deliberately exposes list pages and candidate detail while
+  the form is retained. Exact-target reads, acknowledgement eligibility, explicit
+  version adoption, no automatic write retries, authentication pause/invalidation,
+  identity/session disposal and stale-response rejection retain production store
+  semantics. Resource changes do not call lesson writes or refresh snapshots.
+
+Design adaptations: production UUID routes replace preview slugs; summaries have
+no descriptions, so cards show metadata rather than invented excerpts. The
+production comparison/reconciliation controls remain more explicit than the
+preview. Administrator server detail is displayed above retained edits so both
+can be compared; generic preview departure confirmation cannot bypass uncertain
+writes. All five resource fields and backend validation/contracts are unchanged.
+No backend, migration, dependency, browser-storage or Phase 3 change is included.
+
+### Phase 2 verification
+
+Implementation verification used isolated source copies under `/tmp/lessonforge-phase2-*`, excluding real
+`.env*` files and generated output, and reuses installed dependencies. No backend
+or database was started or contacted. Rendered tests use installed Chromium and
+intercept API responses; fixture persistence is not real database evidence.
+
+The initial standard repository command, `npm run typecheck --prefix frontend`,
+failed in `tsc --noEmit` on malformed generated `.next/dev/types/routes.d.ts` and
+`validator.ts`. The isolated pass excluded those development-generated inputs
+and did **not** establish a passing standard repository check at that time.
+During independent review, both files were already valid before any generator
+ran, and the standard repository command passed. Their earlier corruption cannot
+be dated to before or during Phase 2 from the available evidence. No cleanup was
+performed. See the [exact diagnostics, evidence and remediation](phase-2-review.md#typecheck-discrepancy).
+A restricted repository Webpack attempt failed parsing a
+TypeScript subprocess's `--showConfig`; permitted isolated builds passed. One
+check accidentally ran from the repository root (which has no `package.json`)
+and was rerun from the frontend copy. These failed attempts are not passes.
+
+The initial rendered run passed 52/54 cases: one startup skip-focus assertion
+and one incorrect new expectation that Skip to content must be blocked during
+uncertainty. The harness now waits for guard initialization, allows accessible
+in-page focus, and checks that subsequent Back traversal remains protected.
+No navigation policy was weakened. Later results must be read separately below.
+
+| Phase 2 check | Result |
+| --- | --- |
+| Frontend lint | Passed on final application source |
+| Initial standard repository typecheck | Failed: malformed `.next/dev/types` files; not an application-source pass |
+| Isolated route generation and TypeScript | Passed on final source with fresh production types; excluded repository development-generated types |
+| Independent standard repository typecheck | Passed on 2026-10-26; development-generated files were already valid before the check |
+| Frontend request/state suite | 92 passed, 0 failed |
+| Webpack production build | Passed, including compilation, TypeScript, generation and tracing |
+| Corrected intermediate rendered Chromium suite | 54 passed, 0 failed; precedes final heading refinement and two added cases |
+| Final-source complete rendered Chromium suite | 56 passed, 0 failed; no page runtime errors |
+| Additional focused viewport/save-bar checks | 5 passed, 0 failed at 320/390/768/1024/1440px |
+| Final rendered-harness lint, formatting and `git diff --check` | Passed |
+| Heading correction: focused rendered outlines | 2 passed; current-source development server with intercepted API; teacher/admin outlines, direct reload and confirmation focus |
+| Heading correction: repository lint and standard TypeScript | Both passed, exit 0; full-suite/build rows above predate this correction |
+
+### User-reported Phase 2 checks
+
+The user reports passing teacher resource browsing, server pagination and
+direct-detail reload; administrator create/edit persistence and retirement;
+unsaved-navigation protection; and visual/keyboard checks. These are recorded as
+user-reported checks, not agent-observed browser or database results. The report
+did not specify date, browser, test resources, or whether each persistence check
+used a live API/database versus fixtures, so it cannot establish those details or
+replace integration evidence below. The user skipped additional independent
+verification after the focused heading tests. Those tests remain the recorded
+independent check for the P3 heading correction only.
+
+The independent review also passed 39 targeted request/state/navigation tests and
+10 additional Chromium probes against the matching existing production build.
+Those are mocked/rendered evidence, separate from the implementation runs above;
+see the [review commands and limits](phase-2-review.md#checks-and-evidence).
+
+The 56-case final rendered run covers direct UUID detail without list loading,
+plain-text content and unavailable-detail hiding; server-cursor pagination and
+empty pages; required-field validation, successful create/reopen, administrator
+validation/conflict text retention, comparison and explicit version adoption;
+cancel/confirm retirement with the viewed version and retired read-only output;
+unknown-ID resource candidate inspection and failed reinspection; authentication
+pause, late-write rejection, confirmed disposal and session isolation; and the
+existing dirty/pending/uncertain link, fragment and Back/Forward regressions in
+Navigation API and fallback modes. These remain mocked/rendered checks.
+
+Resource list/detail and administrator list/editor screenshots were inspected at
+320/390/768/1024/1440px. Automated checks assert horizontal fit, associated labels,
+keyboard movement from title to citation, visible skip-link focus, and focused
+server-error feedback. Full-page captures of scrolled editors relocate fixed/
+sticky elements, so five additional viewport captures and geometric assertions
+verified that Save stays within the viewport and the focused citation field
+clears the save bar. All five passed and their viewport screenshots were inspected.
+This is a focused agent visual inspection with test content, not a full manual
+design-fidelity, zoom, complete keyboard-order or assistive-technology pass.
+Screenshots are temporary artifacts under `/tmp/lessonforge-phase2-*.png`.
+
+The final application build and state checks used
+`/tmp/lessonforge-phase2-review/frontend`. Its changed application and state-test
+files were byte-compared with the review workspace. No package installation or
+browser download was performed. The existing preview Playwright module and
+`/tmp/lessonforge-ui-browsers` Chromium installation were reused with the environment
+overrides documented below. Production build command:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3001 npm run build --prefix frontend -- --webpack
+```
+
+This compiles the frontend using the installed Webpack build path and embeds the
+public API origin. It does not migrate or seed data. The default Turbopack build
+was not rerun for Phase 2; earlier Phase 1 limitations remain recorded below.
+
+### Local preview and remaining checks
+
+Use the existing privately configured database and provisioned accounts. From the
+repository root, in separate terminals:
+
+```bash
+npm run start:dev --prefix backend
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3001 npm run dev --prefix frontend -- --hostname localhost --port 3000
+```
+
+These start the API and frontend without resetting, seeding or migrating data.
+Open `http://localhost:3000/sign-in`; sign in as teacher for `/resources`, and as
+administrator for `/admin/resources`. Open a real list link to test a UUID detail
+and reload its URL directly. Verify create/edit/conflict/recovery and cancel/confirm
+retirement with controlled test resources; existing lesson snapshots must remain
+unchanged. Restarting/reloading loses unsaved in-memory edits after a permitted
+browser departure. No credentials or account fixtures are provided by this UI.
+
+The existing test commands and installed Playwright environment overrides in the
+Phase 1 record below still apply. No installation was needed. Real API/database
+browser integration, real pagination datasets, snapshot preservation through a
+live administrator edit/retirement, deployed authentication/cookies/HTTPS, zoom,
+assistive technology and Firefox/WebKit remain pending. Screenshot inspection
+and mocked Chromium checks cannot close those items. Phase 1 manual Back/Forward
+checks remain deferred until after Phase 3 by the earlier user decision. Full
+integration acceptance and the teacher-draft checklist remain pending.
+The user-reported general unsaved-navigation pass does not close the specifically
+deferred Phase 1 draft Back/Forward cases. Full draft workflows and real lesson
+snapshot preservation through resource edits/retirement remain pending.
+
+## Historical Phase 1 record
 
 ## Scope and checkpoint
 

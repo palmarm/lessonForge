@@ -99,7 +99,9 @@ export function createResourcesState(
       pending: operation ? "write" : "read",
       error: null,
       notice: null,
-      ...(reconciling || (!operation && state.uncertain) ? { reconciled: false } : {}),
+      ...(reconciling || (!operation && state.uncertain)
+        ? { reconciled: false }
+        : {}),
     });
     try {
       const patch = await request(controller.signal);
@@ -223,6 +225,10 @@ export function createResourcesState(
         },
         true,
       );
+    },
+    close: () => {
+      if (alive && !paused && !state.pending && !state.uncertain && !state.form)
+        update({ selected: null, error: null });
     },
     create: () => {
       if (

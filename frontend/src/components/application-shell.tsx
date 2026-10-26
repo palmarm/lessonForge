@@ -23,7 +23,9 @@ function PersistentWorkspaces({
     <>
       <div
         hidden={
-          admin ? pathname !== "/admin/resources" : pathname !== "/resources"
+          admin
+            ? pathname !== "/admin/resources"
+            : !(pathname === "/resources" || pathname.startsWith("/resources/"))
         }
       >
         <ResourcesPanel />
@@ -50,7 +52,9 @@ export function ApplicationShell({ children }: { children: React.ReactNode }) {
         { href: "/resources", label: "Resources" },
         { href: "/drafts", label: "My drafts" },
       ];
-  const workspaceRoute = navigation.some((item) => item.href === pathname);
+  const workspaceRoute =
+    navigation.some((item) => item.href === pathname) ||
+    (!admin && pathname.startsWith("/resources/"));
   useEffect(() => {
     const heading = main.current?.querySelector<HTMLElement>("h1");
     heading?.focus();
@@ -74,7 +78,13 @@ export function ApplicationShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
-                aria-current={pathname === item.href ? "page" : undefined}
+                aria-current={
+                  pathname === item.href ||
+                  (item.href === "/resources" &&
+                    pathname.startsWith("/resources/"))
+                    ? "page"
+                    : undefined
+                }
                 className="navigation-link"
                 aria-disabled={!ready}
               >
