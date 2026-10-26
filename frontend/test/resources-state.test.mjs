@@ -54,10 +54,16 @@ test("authentication pause retains admin edits, invalidates late writes and requ
     store.field("title", "Retained admin text");
     const late = deferred();
     let writes = 0;
-    api.edit = () => { writes++; return late.promise; };
+    api.edit = () => {
+      writes++;
+      return late.promise;
+    };
     const writing = store.save();
     store.pause(true);
-    assert.deepEqual(store.getSnapshot().uncertain, { type: "edit", targetId: id });
+    assert.deepEqual(store.getSnapshot().uncertain, {
+      type: "edit",
+      targetId: id,
+    });
     assert.equal(store.getSnapshot().pending, null);
     store.field("title", "Must not change");
     store.cancel();
@@ -96,7 +102,10 @@ test("authentication pause invalidates late admin reads and identity disposal re
     api.detail = () => late.promise;
     const reading = store.view(id);
     if (dispose) store.dispose();
-    else { store.pause(true); store.pause(false); }
+    else {
+      store.pause(true);
+      store.pause(false);
+    }
     late.resolve(resource);
     await reading;
     assert.equal(store.getSnapshot().selected, null);
@@ -106,11 +115,15 @@ test("authentication pause invalidates late admin reads and identity disposal re
 test("a failed ordinary list read revokes earlier uncertainty acknowledgement eligibility", async () => {
   const { store, api } = fixture();
   store.create();
-  api.create = async () => { throw new AuthApiError("unavailable", "Unknown outcome"); };
+  api.create = async () => {
+    throw new AuthApiError("unavailable", "Unknown outcome");
+  };
   await store.save();
   await store.reconcile();
   assert.equal(store.getSnapshot().reconciled, true);
-  api.list = async () => { throw new AuthApiError("unavailable", "Read failed"); };
+  api.list = async () => {
+    throw new AuthApiError("unavailable", "Read failed");
+  };
   await store.list();
   store.acknowledge();
   assert.equal(store.getSnapshot().reconciled, false);
@@ -310,4 +323,51 @@ test("subscriptions stop on unsubscribe and successful saves do not perform impl
   assert.equal(count, before);
   assert.equal(calls.length, 1);
   assert.equal(store.getSnapshot().form, null);
+});
+
+test("teacher pagination uses the server cursor and direct detail does not require a summary", async () => {
+  const { store, api } = fixture("TEACHER");
+  const reads = [];
+  api.list = async (after) => {
+    reads.push(after);
+    return after
+      ? { items: [], nextAfter: null }
+      : { items: [resource], nextAfter: id };
+  };
+  await store.view(id);
+  assert.equal(store.getSnapshot().selected.id, id);
+  assert.deepEqual(reads, []);
+  await store.list();
+  await store.list(store.getSnapshot().nextAfter);
+  assert.deepEqual(reads, [undefined, id]);
+  assert.deepEqual(store.getSnapshot().items, []);
+  assert.equal(store.getSnapshot().nextAfter, null);
+});
+
+test("closing admin detail cannot discard entered, pending, uncertain or paused work", async () => {
+  const { store, api } = fixture();
+  await store.view(id);
+  store.edit();
+  store.field("title", "Retained");
+  store.close();
+  assert.equal(store.getSnapshot().form.title, "Retained");
+  assert.equal(store.getSnapshot().selected.id, id);
+  store.cancel();
+  const late = deferred();
+  api.retire = () => late.promise;
+  const writing = store.retire();
+  store.close();
+  assert.equal(store.getSnapshot().selected.id, id);
+  late.reject(new AuthApiError("unavailable", "Unknown result"));
+  await writing;
+  store.close();
+  assert.equal(store.getSnapshot().selected.id, id);
+  await store.reconcile();
+  store.acknowledge();
+  store.pause(true);
+  store.close();
+  assert.equal(store.getSnapshot().selected.id, id);
+  store.pause(false);
+  store.close();
+  assert.equal(store.getSnapshot().selected, null);
 });

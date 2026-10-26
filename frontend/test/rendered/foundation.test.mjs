@@ -182,7 +182,12 @@ async function fixture(identity = teacher, fallback = false) {
       }
     };
     if (method === "OPTIONS") return respond(204);
-    f.calls.push({ method, path: url.pathname, body: request.postDataJSON() });
+    f.calls.push({
+      method,
+      path: url.pathname,
+      body: request.postDataJSON(),
+      search: url.search,
+    });
     if (url.pathname === "/auth/me")
       return respond(f.identity ? f.meStatus : 401, f.identity);
     if (url.pathname === "/auth/login")
@@ -205,10 +210,24 @@ async function fixture(identity = teacher, fallback = false) {
         const { sourceReference, contentText, ...summary } = f.resource;
         void sourceReference;
         void contentText;
-        return respond(200, { items: [summary], nextAfter: null });
+        return respond(
+          200,
+          f.resourcePage ?? { items: [summary], nextAfter: null },
+        );
       }
       if (url.pathname === `/resources/${resourceId}`)
         return respond(f.detailStatus, f.resource);
+    }
+    if (
+      method === "POST" &&
+      url.pathname === `/resources/${resourceId}/retire`
+    ) {
+      f.resource = {
+        ...f.resource,
+        version: request.postDataJSON().expectedVersion + 1,
+        retiredAt: lesson.updatedAt,
+      };
+      return respond(f.writeStatus, f.resource);
     }
     if (method === "PUT") {
       const body = request.postDataJSON();
@@ -233,6 +252,10 @@ async function fixture(identity = teacher, fallback = false) {
       const status = f.writeStatus;
       if (f.hold) await f.hold.promise;
       return respond(status, result);
+    }
+    if (method === "POST" && url.pathname === "/resources") {
+      f.resource = { ...f.resource, ...request.postDataJSON(), version: 1 };
+      return respond(f.writeStatus === 200 ? 201 : f.writeStatus, f.resource);
     }
     if (method === "POST" && url.pathname === "/lessons") {
       const { content } = request.postDataJSON();
@@ -294,7 +317,7 @@ async function openResource(f) {
   await f.goto("/admin/resources");
   await f.page
     .getByRole("button", {
-      name: "Saved resource Active · Version 1",
+      name: "Manage resource: Saved resource",
       exact: true,
     })
     .click();
@@ -307,6 +330,10 @@ async function openResource(f) {
 }
 
 async function skipToContent(page) {
+  // Wait for the navigation effect to own anchors before testing its focus.
+  await page.waitForFunction(
+    () => !!history.state?.__lessonforgeNavigationIndex,
+  );
   await page.locator(".skip-link").focus();
   await page.keyboard.press("Enter");
   assert.equal(
@@ -324,7 +351,7 @@ async function assertRetainedDraft(page, url) {
   assert.equal(await title.inputValue(), "History regression text");
   assert.equal(
     await page
-      .getByRole("heading", { name: "Curriculum resources", exact: true })
+      .getByRole("heading", { name: "Resources", exact: true })
       .isVisible(),
     false,
   );
@@ -1071,6 +1098,522 @@ test("sign-in uses real request shape, clears passwords, and distinguishes rejec
         true,
       );
     }
+  } finally {
+    await f.close();
+  }
+});
+
+async function assertHeadingOutline(page, expected) {
+  const [level, name] = expected.at(-1);
+  const main = page.getByRole("main");
+  await main.getByRole("heading", { level, name, exact: true }).waitFor();
+  assert.deepEqual(
+    await main.getByRole("heading").evaluateAll((headings) =>
+      headings.map((heading) => [
+        Number(heading.tagName.slice(1)),
+        heading.textContent.trim(),
+      ]),
+    ),
+    expected,
+  );
+}
+
+test("Phase 2 heading outline: teacher resource list and direct detail", async () => {
+  const f = await fixture();
+  const p = f.page;
+  try {
+    await f.goto("/resources");
+    await assertHeadingOutline(p, [
+      [1, "Resources"],
+      [2, "Saved resource"],
+    ]);
+    await p
+      .getByRole("link", { name: "View resource: Saved resource", exact: true })
+      .click();
+    const detailOutline = [
+      [1, "Saved resource"],
+      [2, "Source reference"],
+      [2, "Resource text"],
+    ];
+    await assertHeadingOutline(p, detailOutline);
+    await p.reload();
+    await assertHeadingOutline(p, detailOutline);
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 2 heading outline: administrator list, editors, detail and retirement", async () => {
+  const f = await fixture(admin);
+  const p = f.page;
+  try {
+    await f.goto("/admin/resources");
+    await assertHeadingOutline(p, [
+      [1, "Manage resources"],
+      [2, "Saved resource"],
+    ]);
+    await p.getByRole("button", { name: "Create resource", exact: true }).click();
+    await assertHeadingOutline(p, [
+      [1, "Manage resources"],
+      [2, "Create resource"],
+    ]);
+    await dialog(p, true, () =>
+      p.getByRole("button", { name: "Back to resource list" }).click(),
+    );
+    await p
+      .getByRole("button", { name: "Manage resource: Saved resource", exact: true })
+      .click();
+    const detailOutline = [
+      [1, "Manage resources"],
+      [2, "Saved resource"],
+      [3, "Source reference"],
+      [3, "Resource text"],
+    ];
+    await assertHeadingOutline(p, detailOutline);
+    await p.getByRole("button", { name: "Edit resource", exact: true }).click();
+    await assertHeadingOutline(p, [
+      ...detailOutline,
+      [2, "Edit resource (based on version 1)"],
+    ]);
+    await p.getByRole("button", { name: "Discard entered edits", exact: true }).click();
+    await p.getByRole("button", { name: "Retire resource", exact: true }).click();
+    await assertHeadingOutline(p, [
+      ...detailOutline,
+      [3, "Retire “Saved resource”?"],
+    ]);
+    assert.equal(
+      await p.evaluate(() => document.activeElement.id),
+      "retire-confirm-heading",
+    );
+    await p.getByRole("button", { name: "Confirm retirement", exact: true }).click();
+    await p.getByText(/Retired · Read-only/).waitFor();
+    await assertHeadingOutline(p, detailOutline);
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 2 direct teacher detail loads exact UUID, handles unavailable content and keeps API text plain", async () => {
+  const f = await fixture();
+  try {
+    f.resource.contentText = "<b>Only API content</b>";
+    await f.goto(`/resources/${resourceId}`);
+    await f.page
+      .getByText("<b>Only API content</b>", { exact: true })
+      .waitFor();
+    assert.equal(f.calls.filter((c) => c.path === "/resources").length, 0);
+    assert.equal(await f.page.locator("article b").count(), 0);
+    f.detailStatus = 404;
+    await f.page
+      .getByRole("button", { name: "Reload resource", exact: true })
+      .click();
+    await f.page
+      .getByRole("alert")
+      .filter({ hasText: "unavailable" })
+      .waitFor();
+    assert.equal(
+      await f.page
+        .getByText("<b>Only API content</b>", { exact: true })
+        .count(),
+      0,
+    );
+    await f.page.getByRole("link", { name: "Back to resources" }).click();
+    await f.page
+      .getByRole("link", { name: "View resource: Saved resource" })
+      .waitFor();
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 2 server pagination renders summaries and requests the supplied cursor", async () => {
+  const f = await fixture();
+  try {
+    const { sourceReference, contentText, ...summary } = f.resource;
+    void sourceReference;
+    void contentText;
+    const items = Array.from({ length: 20 }, (_, i) => ({
+      ...summary,
+      id: `22222222-2222-4222-8222-${String(i + 1).padStart(12, "0")}`,
+      title: `Page resource ${i + 1}`,
+    }));
+    f.resourcePage = { items, nextAfter: items.at(-1).id };
+    await f.goto("/resources");
+    await f.page
+      .getByRole("link", {
+        name: "View resource: Page resource 20",
+        exact: true,
+      })
+      .waitFor();
+    f.resourcePage = { items: [], nextAfter: null };
+    await f.page
+      .getByRole("button", { name: "Next page", exact: true })
+      .click();
+    await f.page
+      .getByText("No resources on this page.", { exact: true })
+      .waitFor();
+    assert.ok(
+      f.calls.some((c) => c.search === `?limit=20&after=${items.at(-1).id}`),
+    );
+    assert.equal(
+      f.calls.filter((c) => c.path.startsWith("/resources/")).length,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 2 retirement confirms viewed version and presents retired content read-only", async () => {
+  const f = await fixture(admin);
+  try {
+    await f.goto("/admin/resources");
+    await f.page
+      .getByRole("button", {
+        name: "Manage resource: Saved resource",
+        exact: true,
+      })
+      .click();
+    await f.page
+      .getByRole("button", { name: "Retire resource", exact: true })
+      .click();
+    await f.page
+      .getByRole("button", { name: "Cancel retirement", exact: true })
+      .click();
+    assert.equal(f.calls.filter((c) => c.method === "POST").length, 0);
+    await f.page
+      .getByRole("button", { name: "Retire resource", exact: true })
+      .click();
+    await f.page
+      .getByRole("button", { name: "Confirm retirement", exact: true })
+      .click();
+    await f.page.getByText(/Retired · Read-only/).waitFor();
+    assert.deepEqual(f.calls.find((c) => c.path.endsWith("/retire")).body, {
+      expectedVersion: 1,
+    });
+    assert.equal(
+      await f.page
+        .getByRole("button", { name: "Edit resource", exact: true })
+        .count(),
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 2 administrator validation and comparison preserve text and version", async () => {
+  const f = await fixture(admin);
+  try {
+    await openResource(f);
+    f.writeStatus = 400;
+    await f.page
+      .getByRole("button", { name: "Save resource", exact: true })
+      .click();
+    const alert = f.page
+      .getByRole("alert")
+      .filter({ hasText: "Check required fields" });
+    await alert.waitFor();
+    assert.equal(
+      await alert.evaluate((el) => el === document.activeElement),
+      true,
+    );
+    assert.equal(
+      await f.page.getByLabel("Title (maximum 200 characters)").inputValue(),
+      "Retained administrator text",
+    );
+    f.resource.title = "Other administrator text";
+    f.resource.version = 3;
+    await f.page
+      .getByRole("button", {
+        name: "Load latest result (keep entered text)",
+        exact: true,
+      })
+      .click();
+    await f.page
+      .getByRole("button", {
+        name: "Use displayed version 3 with my entered text",
+      })
+      .waitFor();
+    assert.equal(
+      await f.page.getByLabel("Title (maximum 200 characters)").inputValue(),
+      "Retained administrator text",
+    );
+    assert.equal(f.calls.filter((c) => c.method === "PUT").length, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+for (const width of [320, 390, 768, 1024, 1440]) {
+  test(`Phase 2 resource layouts and labeled keyboard controls fit ${width}px`, async () => {
+    const f = await fixture(admin);
+    try {
+      await f.page.setViewportSize({ width, height: 900 });
+      await f.goto("/admin/resources");
+      await f.page
+        .getByRole("button", {
+          name: "Manage resource: Saved resource",
+          exact: true,
+        })
+        .waitFor();
+      assert.equal(
+        await f.page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        true,
+      );
+      await f.page.screenshot({
+        path: `/tmp/lessonforge-phase2-admin-list-${width}.png`,
+        fullPage: true,
+      });
+      await openResource(f);
+      const title = f.page.getByLabel("Title (maximum 200 characters)");
+      await title.focus();
+      await f.page.keyboard.press("Tab");
+      assert.equal(
+        await f.page
+          .getByLabel("Source reference (maximum 1,000 characters)")
+          .evaluate((el) => el === document.activeElement),
+        true,
+      );
+      assert.equal(
+        await f.page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        true,
+      );
+      const saveBounds = await f.page
+        .getByRole("button", { name: "Save resource", exact: true })
+        .boundingBox();
+      assert.ok(
+        saveBounds.y >= 0 && saveBounds.y + saveBounds.height <= 900,
+        "Save remains in the viewport while editing",
+      );
+      const fieldBounds = await f.page
+        .getByLabel("Source reference (maximum 1,000 characters)")
+        .boundingBox();
+      const barBounds = await f.page.locator("form .sticky").boundingBox();
+      assert.ok(
+        fieldBounds.y >= barBounds.y + barBounds.height,
+        "focused field clears the sticky save bar",
+      );
+      await f.page.screenshot({
+        path: `/tmp/lessonforge-phase2-admin-viewport-${width}.png`,
+        fullPage: false,
+      });
+      await f.page.screenshot({
+        path: `/tmp/lessonforge-phase2-admin-${width}.png`,
+        fullPage: true,
+      });
+      f.page.on("dialog", (d) => d.accept());
+      await f.page.goto(`${origin}/resources/${resourceId}`);
+      f.identity = teacher;
+      await account(f.page)
+        .getByRole("button", { name: "Check session again", exact: true })
+        .click();
+      await f.page.getByText("Test text", { exact: true }).waitFor();
+      await f.page.screenshot({
+        path: `/tmp/lessonforge-phase2-detail-${width}.png`,
+        fullPage: true,
+      });
+      await f.page.getByRole("link", { name: "Back to resources" }).click();
+      await f.page
+        .getByRole("link", { name: "View resource: Saved resource" })
+        .waitFor();
+      await f.page.screenshot({
+        path: `/tmp/lessonforge-phase2-list-${width}.png`,
+        fullPage: true,
+      });
+      assert.equal(
+        await f.page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        true,
+      );
+    } finally {
+      await f.close();
+    }
+  });
+}
+
+test("Phase 2 uncertain resource creation keeps candidates reachable and blocks stale acknowledgement", async () => {
+  const f = await fixture(admin, true);
+  try {
+    const p = f.page;
+    await f.goto("/admin/resources");
+    await p
+      .getByRole("button", { name: "Create resource", exact: true })
+      .click();
+    await p
+      .getByLabel("Title (maximum 200 characters)")
+      .fill("Uncertain resource");
+    await p
+      .getByLabel("Source reference (maximum 1,000 characters)")
+      .fill("Citation");
+    await p
+      .getByLabel("Resource text (maximum 20,000 characters)")
+      .fill("Retained content");
+    f.writeStatus = 503;
+    await p.getByRole("button", { name: "Save resource", exact: true }).click();
+    await p.getByText(/Uncertain outcome · Reconcile/).waitFor();
+    await p
+      .getByRole("button", {
+        name: "Load latest result (keep entered text)",
+        exact: true,
+      })
+      .click();
+    await p
+      .getByRole("button", {
+        name: "Manage resource: Uncertain resource",
+        exact: true,
+      })
+      .click();
+    await p
+      .getByRole("button", {
+        name: "I checked the result; allow another action",
+      })
+      .waitFor();
+    f.detailStatus = 503;
+    await p
+      .getByRole("button", {
+        name: "Manage resource: Uncertain resource",
+        exact: true,
+      })
+      .click();
+    await p
+      .getByRole("alert")
+      .filter({ hasText: "temporarily unavailable" })
+      .waitFor();
+    assert.equal(
+      await p
+        .getByRole("button", {
+          name: "I checked the result; allow another action",
+        })
+        .count(),
+      0,
+    );
+    assert.equal(
+      await p
+        .getByLabel("Resource text (maximum 20,000 characters)")
+        .inputValue(),
+      "Retained content",
+    );
+    await p.locator(".skip-link").focus();
+    await p.keyboard.press("Enter");
+    await p.waitForURL(`${origin}/admin/resources#main-content`);
+    assert.equal(
+      await p.evaluate(() => document.activeElement.id),
+      "main-content",
+    );
+    await p.evaluate(() => history.back());
+    await p.locator("[data-navigation-notice]").waitFor();
+    await p.waitForURL(`${origin}/admin/resources#main-content`);
+    assert.equal(
+      await p
+        .getByLabel("Resource text (maximum 20,000 characters)")
+        .inputValue(),
+      "Retained content",
+    );
+    assert.equal(
+      f.calls.filter((c) => c.method === "POST" && c.path === "/resources")
+        .length,
+      1,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 2 create validates required fields, saves exact content and reopens server detail", async () => {
+  const f = await fixture(admin);
+  try {
+    const p = f.page;
+    await f.goto("/admin/resources");
+    await p
+      .getByRole("button", { name: "Create resource", exact: true })
+      .click();
+    await p.getByRole("button", { name: "Save resource", exact: true }).click();
+    assert.equal(f.calls.filter((c) => c.method === "POST").length, 0);
+    assert.equal(
+      await p
+        .getByLabel("Title (maximum 200 characters)")
+        .evaluate((el) => el.validity.valueMissing),
+      true,
+    );
+    await p.getByLabel("Title (maximum 200 characters)").fill("New resource");
+    await p
+      .getByLabel("Source reference (maximum 1,000 characters)")
+      .fill("New citation");
+    await p
+      .getByLabel("Resource text (maximum 20,000 characters)")
+      .fill("New content");
+    await p.getByRole("button", { name: "Save resource", exact: true }).click();
+    await p
+      .getByText("Resource saved. Reload the list to update browsing.", {
+        exact: true,
+      })
+      .waitFor();
+    assert.deepEqual(f.calls.find((c) => c.method === "POST").body, {
+      title: "New resource",
+      subject: "Mathematics",
+      grade: "Grade 4",
+      sourceReference: "New citation",
+      contentText: "New content",
+    });
+    await p.getByRole("button", { name: "Back to resource list" }).click();
+    await p.getByRole("button", { name: "Reload list", exact: true }).click();
+    await p
+      .getByRole("button", {
+        name: "Manage resource: New resource",
+        exact: true,
+      })
+      .click();
+    await p.getByText("New content", { exact: true }).waitFor();
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 2 admin conflict requires comparison and explicit version adoption before replacement save", async () => {
+  const f = await fixture(admin);
+  try {
+    const p = f.page;
+    await openResource(f);
+    f.writeStatus = 409;
+    await p.getByRole("button", { name: "Save resource", exact: true }).click();
+    await p
+      .getByRole("alert")
+      .filter({ hasText: "Resource changed or is retired" })
+      .waitFor();
+    f.resource = { ...f.resource, title: "Winning content", version: 3 };
+    await p
+      .getByRole("button", {
+        name: "Load latest result (keep entered text)",
+        exact: true,
+      })
+      .click();
+    const adopt = p.getByRole("button", {
+      name: "Use displayed version 3 with my entered text",
+    });
+    await adopt.waitFor();
+    assert.equal(
+      await p.getByLabel("Title (maximum 200 characters)").inputValue(),
+      "Retained administrator text",
+    );
+    assert.equal(f.calls.filter((c) => c.method === "PUT").length, 1);
+    await adopt.click();
+    f.writeStatus = 200;
+    await p.getByRole("button", { name: "Save resource", exact: true }).click();
+    await p
+      .getByText("Resource saved. Reload the list to update browsing.", {
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(
+      f.calls.filter((c) => c.method === "PUT").at(-1).body.expectedVersion,
+      3,
+    );
   } finally {
     await f.close();
   }
