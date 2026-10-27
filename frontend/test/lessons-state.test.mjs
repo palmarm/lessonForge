@@ -53,12 +53,16 @@ function fixture(sessionEnded) {
 test("a new failed list read invalidates candidate acknowledgement and creation no-match eligibility", async () => {
   const { store, api } = fixture();
   store.create();
-  api.create = async () => { throw new AuthApiError("unavailable", "Unknown outcome"); };
+  api.create = async () => {
+    throw new AuthApiError("unavailable", "Unknown outcome");
+  };
   await store.save();
   await store.reconcile();
   await store.inspectCreation(id);
   assert.equal(store.getSnapshot().reconciled, true);
-  api.list = async () => { throw new AuthApiError("unavailable", "Read failed"); };
+  api.list = async () => {
+    throw new AuthApiError("unavailable", "Read failed");
+  };
   await store.list();
   store.acknowledge();
   store.confirmCreationNotFound();
@@ -246,12 +250,16 @@ test("confirmed identity changes dispose private workspace and reject prior succ
     const pending = store.save();
     store.dispose();
     assert.equal(signal.aborted, true);
+    assert.deepEqual(store.getSnapshot(), initialLessonState);
     store.activate();
     await store.list();
     if (reject) late.reject(new Error("prior identity"));
     else late.resolve(lesson);
     await pending;
-    assert.deepEqual(store.getSnapshot(), initialLessonState);
+    assert.deepEqual(store.getSnapshot(), {
+      ...initialLessonState,
+      listLoaded: true,
+    });
   }
 });
 test("401 requests authentication reconciliation and keeps work until identity confirmation", async () => {
@@ -662,4 +670,158 @@ test("read-only resource browsing is separate from editing, source saves retain 
     "Entered introduction not yet saved",
   );
   assert.equal(hasUnsavedLessonContent(reloaded.getSnapshot()), false);
+});
+
+test("returning to drafts reads the authoritative first page and clears stale summaries while loading", async () => {
+  const { api, store, calls } = fixture();
+  const page = { items: [lesson], nextAfter: resourceId };
+  api.list = async () => page;
+  await store.list(resourceId);
+  await store.view(id);
+  store.field({ title: "Renamed draft" });
+  await store.save();
+  const read = deferred();
+  api.list = (after, signal) => {
+    calls.push(["list", after, signal]);
+    return read.promise;
+  };
+  const returning = store.close();
+  assert.equal(store.getSnapshot().form, null);
+  assert.equal(store.getSnapshot().pending, "read");
+  assert.deepEqual(store.getSnapshot().items, []);
+  assert.equal(store.getSnapshot().nextAfter, null);
+  assert.equal(calls.at(-1)[1], undefined);
+  const confirmedPage = {
+    items: [{ ...lesson, title: "Renamed draft", version: 2 }],
+    nextAfter: id,
+  };
+  read.resolve(confirmedPage);
+  await returning;
+  assert.deepEqual(store.getSnapshot().items, confirmedPage.items);
+  assert.equal(store.getSnapshot().nextAfter, id);
+  assert.equal(store.getSnapshot().pending, null);
+  assert.equal(calls.filter((call) => call[0] === "save").length, 1);
+});
+
+test("a returned-list failure stays a read failure and only an explicit list read recovers", async () => {
+  const { api, store, calls } = fixture();
+  await store.view(id);
+  api.list = async () => {
+    throw new AuthApiError("unavailable", "List unavailable");
+  };
+  await store.close();
+  assert.equal(store.getSnapshot().error, "List unavailable");
+  assert.equal(store.getSnapshot().uncertain, null);
+  assert.equal(store.getSnapshot().pending, null);
+  assert.deepEqual(store.getSnapshot().items, []);
+  api.list = async () => ({ items: [lesson], nextAfter: null });
+  await store.list();
+  assert.equal(store.getSnapshot().error, null);
+  assert.equal(store.getSnapshot().items[0].id, id);
+  assert.equal(calls.length, 0);
+});
+
+test("returned-list success and failure cannot leak across pause or session disposal/replacement", async () => {
+  for (const boundary of ["pause", "replace"])
+    for (const failure of [false, true]) {
+      let ended = 0;
+      const { api, store } = fixture(() => {
+        ended++;
+      });
+      await store.view(id);
+      const late = deferred();
+      let signal;
+      api.list = (_after, value) => {
+        signal = value;
+        return late.promise;
+      };
+      const returning = store.close();
+      let replacement;
+      if (boundary === "pause") {
+        store.pause(true);
+        store.pause(false);
+        api.list = async () => ({
+          items: [{ ...lesson, title: "Current page" }],
+          nextAfter: null,
+        });
+        await store.list();
+      } else {
+        store.dispose();
+        replacement = fixture();
+        replacement.api.list = async () => ({
+          items: [{ ...lesson, title: "New session" }],
+          nextAfter: null,
+        });
+        await replacement.store.list();
+      }
+      assert.equal(signal.aborted, true);
+      if (failure) late.reject(new AuthApiError("unauthenticated", "Old 401"));
+      else
+        late.resolve({
+          items: [{ ...lesson, title: "Stale page" }],
+          nextAfter: resourceId,
+        });
+      await returning;
+      const state = (replacement?.store ?? store).getSnapshot();
+      assert.equal(
+        state.items[0].title,
+        boundary === "pause" ? "Current page" : "New session",
+      );
+      assert.equal(state.error, null);
+      assert.equal(state.nextAfter, null);
+      assert.equal(ended, 0, "A stale 401 must not end the current session");
+      if (replacement)
+        assert.deepEqual(store.getSnapshot(), initialLessonState);
+    }
+});
+
+test("return refresh cannot discard or infer success for an uncertain creation or known write", async () => {
+  for (const create of [true, false]) {
+    const { api, store } = fixture();
+    let reads = 0,
+      writes = 0;
+    if (create) store.create();
+    else await store.view(id);
+    store.field({ title: "Keep uncertain text" });
+    api.list = async () => {
+      reads++;
+      return { items: [], nextAfter: null };
+    };
+    api[create ? "create" : "save"] = async () => {
+      writes++;
+      throw new AuthApiError("unavailable", "Unknown outcome");
+    };
+    await store.save();
+    await store.close();
+    assert.equal(store.getSnapshot().form.title, "Keep uncertain text");
+    assert.ok(store.getSnapshot().uncertain);
+    assert.equal(reads, 0);
+    assert.equal(writes, 1);
+  }
+});
+
+test("an interrupted return read is not a confirmed empty list and resumes only on explicit reload", async () => {
+  const { api, store } = fixture();
+  await store.view(id);
+  const late = deferred();
+  let reads = 0;
+  api.list = async () => {
+    reads++;
+    return late.promise;
+  };
+  const returning = store.close();
+  store.pause(true);
+  late.resolve({ items: [], nextAfter: null });
+  await returning;
+  store.pause(false);
+  assert.equal(store.getSnapshot().listLoaded, false);
+  assert.equal(store.getSnapshot().pending, null);
+  assert.equal(reads, 1);
+  api.list = async () => {
+    reads++;
+    return { items: [], nextAfter: null };
+  };
+  await store.list();
+  assert.equal(store.getSnapshot().listLoaded, true);
+  assert.equal(reads, 2);
 });
