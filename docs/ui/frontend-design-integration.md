@@ -1,15 +1,448 @@
-# Frontend design integration — Phases 1 and 2
+# Frontend design integration — Phases 1–3
 
-This guide is in `docs/ui/`, the location for future frontend integration and
-design documentation.
+## User-reported local acceptance closeout
+
+The user reports **all eight combined manual acceptance checks from this
+conversation passed**, including the previously deferred **Phase 1 navigation
+checks**. This is **user-performed local acceptance**, not manual verification
+performed by Codex. The report is recorded as supplied; no additional execution
+steps, environment details or coverage are inferred.
+
+| Reported acceptance | Result / attribution |
+| --- | --- |
+| Combined manual checks 1–8 | All eight passed — user-performed local acceptance |
+| Previously deferred Phase 1 navigation checks | Passed within those eight checks — user report; no longer deferred |
+| R1, D1 and D2 corrections | Corrected; automated tests passed and user manual acceptance passed |
+| Independent re-verification of the corrections | Skipped by user decision; not performed or represented as independently resolved |
+
+The navigation and correction entries describe parts of that reported acceptance,
+not additional manual checks. Earlier automated evidence remains distinct:
+frontend lint, standard TypeScript, 97 request/state tests, 74 rendered tests and
+the Webpack build passed during implementation. These application checks were
+not rerun for this documentation-only closeout.
+
+This report does **not** establish database inspection, HTTPS/deployment or
+security verification, screen-reader/assistive-technology testing, or
+Firefox/WebKit coverage. Unperformed deployment/security, assistive-technology
+and other-browser checks remain pending. Local browser acceptance must not be
+expanded into a claim of production/deployment readiness.
+
+This closeout supersedes earlier pending local-manual/Phase 1 navigation notes
+below. Those checkpoint records remain historical. The broader ten-item
+integration checklist is retained as a reference; the eight reported passes do
+not imply every security, deployment or accessibility subcheck in it was run.
+
+## Phase 3 — teacher drafts and recovery presentation (2026-10-26)
+
+Preparation was checked before editing: branch `feat/frontend-design-drafts`,
+clean working tree and empty index. `e6412cc` (Phase 1) and `fe02f64` (Phase 2)
+are ancestors of the current `HEAD`; the backend lesson/resource contract and
+existing production lesson API/state store are present. No branch operation,
+cleanup, install, database access, staging or commit was performed.
+
+### Independent Phase 3 review (2026-10-27)
+
+The [independent review](phase-3-review.md) originally found **R1 (P2)**: removing an
+invalid earlier activity transfers its new local timing error to a valid remaining
+row, including after a successful save. It required correction before approval.
+No P1 ownership, snapshot, data-loss or recovery-unblocking failure was found.
+
+At that checkpoint two separate design-acceptance gaps remained: **D1**, normal editor instructions
+and always-expanded recovery push writing below the initial viewport, and **D2**,
+a newly created draft with a distinct server ID is absent from the returned list
+until Reload. These behaviors are not required by production contracts. The
+manual Reload workaround works; no persistence loss was observed.
+
+Five new temporary Chromium probes completed. One reproduced R1, one characterized
+D2, one measured D1/heading structure, and two checked array/reload semantics and
+list feedback. Their passing harness status does not mean the findings passed
+acceptance. Current lint/TypeScript/build, prior 15 affected rendered cases and
+unchanged request/state evidence were reused. Two new clean-editor screenshots
+were inspected independently; the earlier scrolled viewport captures do not
+establish initial editor composition. Application and repository test files were
+preserved. Live API/database, full manual accessibility, other browsers and the
+deferred Phase 1 navigation checklist remain pending.
+
+### R1, D1, D2 correction follow-up (2026-10-27)
+
+**Status: R1, D1 and D2 corrected; automated tests passed and user manual
+acceptance passed.** Independent re-verification was skipped by user decision.
+The original independent review is retained as history; these corrections are
+not represented as independently re-verified or as deployment acceptance.
+
+Preparation confirmed `feat/frontend-design-drafts`, `HEAD`/base `fe02f64`, the
+existing four tracked modifications and untracked review record, and an empty
+index. Those edits were preserved. No branch changes, installs, cleanup, staging,
+commits, pushes, merges, backend or migration changes were performed.
+
+- **R1:** activity keys are local to the editor and retained with their rows
+  through add/remove. They never enter API content and reset on create/open and
+  session disposal. Timing feedback records the exact value that native validity
+  checked. A reused field cannot announce an obsolete message for another value;
+  its ref callback recomputes native validity when the value changes, including
+  an invalid row moving into an earlier slot. API content, numeric values and
+  backend rules are unchanged. Permanent rendered regressions cover removing an
+  invalid first row with a valid remaining row, no obsolete alert/`aria-invalid`
+  before and after save, a remaining invalid row receiving its own feedback,
+  and invalid native number text versus an unset timing (both have an unset
+  model value). The last case checks component/browser identity, not just a
+  comparison of numeric values.
+- **D1:** list-only instructions are hidden in the editor. The heading/close
+  controls and sticky Save precede writing. Local view changes focus and align
+  their heading at the viewport top so the mobile shell does not bury writing;
+  optional help/limits and comparison use native disclosures. Conflict, uncertainty or a failed request opens
+  recovery automatically. Enter/Space disclosure interaction does not read,
+  write or adopt anything; loading latest is a separate deliberate read and
+  adoption still requires its existing explicit action. Recovery and navigation
+  gates are unchanged.
+- **D2:** permitted editor close clears stale summaries/cursor and requests the
+  authenticated first list page through the existing store request/generation
+  handling. Server `nextAfter` remains authoritative; later pages are reached
+  explicitly. Loading and read failure do not masquerade as empty results.
+  Separate `listLoaded` presentation metadata distinguishes an interrupted/unread
+  page from a confirmed empty page. Auth pause invalidates that read; after
+  recovery the user chooses Reload explicitly. A failed refresh offers explicit
+  Reload, never another write. Paused, pending
+  and uncertain writes retain their close restrictions. No creation success is
+  inferred from lists. Permanent rendered tests use a distinct server UUID,
+  reopen without manual Reload, rename/return/reopen, failed refresh/recovery and
+  a late response after same-user session replacement. State tests also cover
+  cursor reset, late success/401 across pause/disposal and unresolved-write gates.
+
+#### Correction verification and boundaries
+
+These are implementation-agent checks, not independent resolution. API requests
+are intercepted in Chromium; state/request checks use mocked transport. No live
+NestJS API, authentication account or database was used.
+
+| Check on correction source | Actual result |
+| --- | --- |
+| Repository frontend lint | Passed, exit 0; final state/rendered test-file lint also passed after the last assertion edit |
+| Standard repository `npm run typecheck --prefix frontend` | Passed, exit 0 after the final application build, including generated route types |
+| Request/state suite | 97 passed, 0 failed; includes five added return-list/state cases and all earlier request/state regressions |
+| Webpack production build | Passed, exit 0 on final application source with the permitted process environment |
+| Focused browser checks | 11 correction cases passed before the last identity/read-status refinement; two added native-input/auth-pause cases then passed on the final build; all 13 also passed in the final complete run |
+| Complete rendered suite | 74 passed, 0 failed/canceled/skipped on final source/build, including all 13 permanent correction additions and the Phase 1/2 regressions |
+| Initial editor visual checks | Ten initial open/create captures inspected at 320/390/768/1024/1440px, height 900px; Title and Save visible, compact idle help/comparison and no horizontal overflow |
+| Scrolled Save and snapshot regression | Passed in the complete suite: Save visibility, writing/snapshot columns, retained text and separate source preconditions at all five widths |
+| Final preservation / documentation checks | All 35 source/test hashes match the manifest recorded before the final complete run; 25 local file/anchor targets and `git diff --check` passed |
+| Manual evidence boundary | Codex ran no live API/database acceptance. User-performed local acceptance is recorded above; database inspection, deployment/security, assistive technology and other-browser coverage are not inferred |
+
+The permanent rendered additions cover R1's valid and invalid remaining rows,
+invalid native number text versus an unset value, both normal editor view
+transitions at every requested width without test-forced scrolling, Enter/Space
+on disclosure controls, read-only comparison without adoption, failed inspection
+and conflict exposing recovery, distinct-ID create/return/open, renamed summaries,
+list loading/failure/explicit recovery, and stale/interrupted reads across session
+replacement and temporary auth uncertainty. Normal transitions align the focused
+local heading; lower-field scrolling occurs only after initial measurements and
+captures. Existing anchor tests explicitly open the optional help containing the
+shortcuts; retained-work assertions require the recovery summary to remain
+reachable, with expanded controls asserted in actual recovery cases.
+
+The first exploratory full rendered run had 66 passes and five failures: two
+mobile initial-view failures fixed by heading alignment, an inconsistent fixture
+summary/detail title, and two assertions that counted Next.js's empty route
+announcer as an application error. The fixture now obeys the production response
+contract; assertions reject nonempty alerts and obsolete field associations.
+A later 72-case full run passed before the final activity-identity/list-status
+edge cases were added. After adding `listLoaded`, one earlier isolation assertion
+needed to distinguish immediate disposal (initial state) from a subsequently
+successful empty list (loaded state); the revised test asserts both boundaries,
+and all 97 request/state cases then passed. These exploratory results do not
+substitute for the final-source checks.
+
+The first sandboxed Webpack attempt failed with the previously recorded
+TypeScript `--showConfig` parsing error. Permitted builds passed; the final one
+includes local row identities and confirmed-list status. No dependency/browser
+installation, real API/database access or cleanup command was used. The default
+Turbopack check was not rerun. Earlier evidence is historical context; new checks
+above replace the earlier frontend lint/typecheck/build/request/state/rendered
+results for correction acceptance.
+
+Commands used from the repository root:
+
+```bash
+npm run lint --prefix frontend
+npm run lint --prefix frontend -- test/lessons-state.test.mjs test/rendered/foundation.test.mjs
+npm run typecheck --prefix frontend
+npm test --prefix frontend
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3001 npm run build --prefix frontend -- --webpack
+PLAYWRIGHT_MODULE=/home/mariga/design-work/lessonforge-ui/node_modules/playwright/index.mjs \
+PLAYWRIGHT_BROWSERS_PATH=/tmp/lessonforge-ui-browsers \
+LD_LIBRARY_PATH=/tmp/lessonforge-ui-browser-libs/extracted/usr/lib/x86_64-linux-gnu \
+npm run test:browser --prefix frontend
+```
+
+The focused invocations use the same Playwright environment and Node runner with
+`--test-isolation=none --test-concurrency=1` and patterns `Phase 3 corrections`
+or `local row identity|paused return read`. Logs are retained in
+`/tmp/lessonforge-phase3-corrections-{state,rendered,focused,final-rendered,identity-pause,complete-rendered}.log`;
+initial captures are `/tmp/lessonforge-phase3-corrections-{open,create}-{width}.png`.
+The `rendered` log is the failing exploratory run, `final-rendered` is the
+72-case intermediate pass, and `complete-rendered` is the final-source run.
+Source/test hashes are recorded in
+`/tmp/lessonforge-phase3-corrections-source-hashes.json` for final comparison.
+
+At this correction checkpoint, local manual acceptance was still pending. The
+user subsequently reported all eight combined local checks passed, including the
+deferred Phase 1 navigation checks, as recorded in the closeout above. Independent
+re-verification was skipped by user decision. Database inspection is not inferred;
+unperformed deployment/security, assistive-technology and other-browser checks
+remain pending. Keep the numbered three-phase checklist below as a reference.
+
+Stopped for independent review on `feat/frontend-design-drafts`. Six tracked
+files are modified (the preserved editor/rendered/integration/index edits plus
+lesson state and state tests), and `docs/ui/phase-3-review.md` remains untracked.
+The index is empty and all work is unstaged. Current implementation changes are
+limited to the lesson panel/store and their tests; documentation records the
+changes/results. No branch operation, dependency installation, cleanup, database
+operation, staging, commit, push or merge was performed.
+
+### Design reference and adaptation
+
+Historical note, 2026-10-26: the initial Phase 3 report said the handoff was
+missing and described only an older static teacher-resource wireframe. That
+inspection actually used the sibling `/home/mariga/design-work/lessonforge`
+directory; it did not establish absence at the requested `lessonforge-ui` path.
+The missing-reference claim is corrected here and retained as history.
+
+On 2026-10-27 the user supplied the recovered **LessonForge design handoff**
+(approved 2026-10-23). Its full text was available in the conversation and read
+from `/home/mariga/design-work/lessonforge-ui/DESIGN_HANDOFF.md`, together with
+`components/drafts-workspace.tsx`, `components/lesson-fields.tsx`, and
+`app/globals.css` in that reference project. These are the current design
+references. The older wireframe is not the Phase 3 source of truth.
+
+### Recovered-handoff comparison and corrections (2026-10-27)
+
+The expected branch remains `feat/frontend-design-drafts`. The four unstaged
+Phase 3 files from the initial implementation were preserved; the index was
+empty and there were no untracked files. The interrupted alignment had already
+completed its source/contract comparison and begun presentation changes; it had
+not verified those changes or updated this record. Work resumed from that state.
+
+| Area | Comparison and current adaptation |
+| --- | --- |
+| Already satisfied | Local `/drafts` create/open/editor selection, incomplete saves, exact optional numbers/arrays and whitespace, separate source writes, server snapshots, version preconditions, explicit reconciliation/adoption, auth pause/disposal, and dirty/pending/uncertain navigation protection use production APIs/stores. |
+| Draft list | Replaced plain buttons with neutral cards containing API title, last-saved timestamp and version. The list is a local view; creation recovery keeps list pages/candidate inspection visible beside retained editing. |
+| Writing and snapshots | Added the approved `xl` writing/300px snapshot columns, stacking below `xl`, with `min-width: 0`. Snapshots retain separate neutral read-only cards, subject/grade, full text and explicit source controls. |
+| Save presentation | Replaced the initial bottom-fixed bar with the approved top-sticky neutral status/Save bar and restrained shadow. Its submit button belongs to the content form so native validation still runs. Saved time/version, unsaved edits, saving, auth pause, conflict, uncertainty and request errors remain explicit. |
+| Fields and feedback | Added optional Mathematics/Grade 4 selectors with Not set, section headings, associated limits/hints, native numeric validity messages, local open/close heading focus and focused server-error feedback. No completeness or timing-sum validation was added. |
+| Recovery placement | Moved production comparison/recovery controls above the writing/snapshot columns; all acknowledgement, candidate inspection and version-adoption gates stay in the existing store. |
+
+Production adaptations intentionally retained:
+
+- Objective/material entries stay separate labeled textareas so embedded newlines
+  are preserved as part of each array item. Unset arrays, explicit empty arrays,
+  blank strings, whitespace, and blank versus zero timings keep their semantics.
+  The title also remains a textarea because the production string contract
+  accepts line breaks; changing it to the preview's single-line input could strip
+  valid entered text.
+- The stable page `h1` remains **My drafts**; local editor/list changes focus their
+  `h2`. The preview uses a changing editor `h1`. Production labels such as
+  **New manual draft**, **Close editor and discard unsaved text**, and the more
+  explicit reconciliation/source-action labels are retained.
+- Source browsing uses server pages and an explicit active detail read before
+  selection, rather than the preview's complete local catalog. Recovery remains
+  available above the editor even without a current error, and uncertain
+  creation retains candidate/list controls rather than hiding all list content.
+- The handoff's statement that production panels compose on `/` describes its
+  earlier checkpoint. Merged Phases 1/2 already adopted production routes and a
+  persistent session-keyed shell; this alignment retains them.
+
+Preview behaviors excluded because they conflict with production contracts:
+browser-assigned IDs, owners, versions/timestamps and full local lists; string
+numeric/multiline draft payloads; local snapshot capture and simulated resource
+updates; scripted failure/auth modes and browser-storage persistence; exact local
+creation-ID/no-write shortcuts; generic departure from unresolved writes; and
+resuming retained text after a confirmed 401 or new session. NestJS ownership,
+actual session identity/expiry, numeric/array payloads, server pagination/capture,
+unknown-ID candidate inspection, explicit no-match acknowledgement and strict
+navigation/disposal rules remain authoritative. No preview data, storage keys or
+simulation controls were added to application source.
+
+### Initial Phase 3 changes (2026-10-26)
+
+- `/drafts` uses the existing persistent teacher workspace and provides draft
+  list, create/open, loading, empty and error feedback. Editor selection remains
+  local; no draft ID appears in the URL.
+- The initial editor kept Save draft visible in a viewport-pinned control bar.
+  The recovered-handoff follow-up replaces that bar with the approved top-sticky
+  presentation while retaining status and native content-form submission.
+- Objectives and materials are edited as separate labeled array entries. This
+  preserves embedded newlines and leading/trailing whitespace per entry, unlike
+  a joined one-item-per-line textarea. Empty arrays remain empty until an item is
+  explicitly added; blank and zero timing values remain distinct.
+- Editable lesson text remains separate from read-only, server captured resource
+  snapshots. Select, remove and explicit refresh use the existing separate
+  versioned source mutations. Ordinary content saves do not update snapshots.
+- Existing state/API recovery remains in use: conflict blocking, exact-target
+  detail reconciliation, explicit acknowledgement/adoption, creation candidate
+  inspection and explicit no-match acknowledgement, no retries, temporary auth
+  pause with retained text, and disposal after confirmed session end/replacement.
+
+No backend contracts, authorization, database/migrations, snapshot rules or
+dependencies changed. Submission, approval/review, library, AI and autosave were
+not added. The existing test fixtures remain test-only.
+
+### Initial Phase 3 verification (2026-10-26; historical)
+
+| Check | Result / boundary |
+| --- | --- |
+| Frontend lint | Passed, exit 0 on updated application source |
+| Standard repository TypeScript (`npm run typecheck --prefix frontend`) | Passed, exit 0 |
+| Request/state suite (`npm test --prefix frontend`) | 92 passed, 0 failed; mocked transport/state |
+| Webpack production build | Passed, exit 0; sandbox attempt hit the recorded `--showConfig` parsing failure, elevated retry passed |
+| Full rendered suite | 59 passed, 0 failed on the updated production build; Chromium with intercepted API responses |
+| Focused Phase 3 create/reopen/edit/save regression | 1 passed; checks exact array strings, whitespace, embedded newlines, zero timing, saved reopen, unsaved status, pinned Save and overflow at 320/390/768/1024/1440px |
+| `git diff --check` | Passed |
+| Real API/database browser checks | Not run; no full integration acceptance claimed |
+
+The first rendered attempt exposed a non-visible Save control at one scroll
+position; the control was changed to remain viewport-pinned. Its rerun passed.
+The earlier full rendered run also had one unrelated 1024px screenshot timeout
+while waiting for browser fonts; the complete rerun passed that viewport. No
+screenshot/visual comparison was performed in that initial Phase 3 pass. The
+recorded 59-case rendered result predates the recovered-handoff corrections.
+Its unaffected behavior evidence and 92 request/state tests are reused; they
+are not claimed as a full rerun of the revised presentation. Manual keyboard
+order, assistive technology, zoom, supported browsers, real API/database
+persistence and the deferred Phase 1 manual navigation checks remain pending.
+
+### Recovered-handoff follow-up verification
+
+Production API/state/auth/navigation implementations, backend contracts and
+schema/migrations are unchanged. Request/state and unaffected Phase 1/2 results
+above are reused. Focused current-source rendered checks cover the revised
+editor, field semantics, snapshots, errors, recovery/session controls, anchors
+and viewport layout. Intercepted API/fixture evidence cannot establish live
+database persistence, cookie behavior or full integration acceptance.
+
+| Follow-up check (2026-10-27) | Actual result / boundary |
+| --- | --- |
+| Repository frontend lint | Passed, exit 0 |
+| Standard repository `npm run typecheck --prefix frontend` | Passed, exit 0, including configured generated route types |
+| Webpack production build | Passed, exit 0 in the actual checkout, using the previously permitted process environment; compilation, TypeScript, page generation and traces completed |
+| Affected rendered Chromium cases | 15 passed, 0 failed, 0 canceled; existing production build with intercepted API |
+| Source/layout visual-capture rerun | 1 passed after refining screenshot positions to show complete source cards/actions at all five widths; application source unchanged |
+| Server-error focus assertion rerun | 1 passed; pending/uncertain recovery also verifies focus on the failed-read alert, retained text, blocked departure and explicit acknowledgement/adoption |
+| Final affected-file ESLint / `git diff --check` | Passed; component and rendered harness linted again after the final assertion/capture edits |
+| Editor/snapshot screenshot inspection | 10 viewport captures reviewed at 320/390/768/1024/1440px; writing, source cards/actions and Save fit; no horizontal overflow; stacked below `xl` and two columns at 1440px |
+| Request/state suite and unaffected Phase 1/2 cases | Reused prior 92 passing request/state tests and the unaffected portion of the earlier 59-case rendered suite; not rerun wholesale |
+| Real API/database, full manual accessibility and deployment checks | Not run; still pending |
+
+The 15 selected cases cover create/save/reopen/edit with exact multiline arrays
+and zero timing; draft card metadata; local heading focus and keyboard movement;
+associated native validation/hints; absent context/arrays versus explicitly set
+context and blank timings; select/remove/Refresh while retaining writing and
+sharing lesson-version preconditions; both editor-anchor/history guard modes;
+dirty Back/Forward, pending/uncertain departures, exact-result recovery, failed
+candidate inspection, late writes, temporary session pause, confirmed 401,
+user/role/session replacement and expiry. The two narrow reruns above repeat
+affected cases rather than adding two distinct cases to the count of 15.
+
+Commands run from the repository root:
+
+```bash
+npm run lint --prefix frontend
+npm run typecheck --prefix frontend
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3001 npm run build --prefix frontend -- --webpack
+PLAYWRIGHT_MODULE=/home/mariga/design-work/lessonforge-ui/node_modules/playwright/index.mjs \
+PLAYWRIGHT_BROWSERS_PATH=/tmp/lessonforge-ui-browsers \
+LD_LIBRARY_PATH=/tmp/lessonforge-ui-browser-libs/extracted/usr/lib/x86_64-linux-gnu \
+node --test --test-isolation=none --test-concurrency=1 \
+  --test-name-pattern='Phase 3|fragment history: editor anchors|pending/uncertain teacher|TEACHER session uncertainty|confirmed 401|unknown-ID creation|confirmed (user|role|session) replacement|role/session replacement|dirty navigation retains work' \
+  frontend/test/rendered/foundation.test.mjs
+```
+
+Build and rendered checks used the previously approved local process/socket
+permission; no dependency or browser installation was attempted. The two narrow
+browser reruns use the same environment/runner with patterns
+`Phase 3 handoff: responsive writing` and
+`pending/uncertain teacher writes block navigation`. Captures remain under
+`/tmp/lessonforge-phase3-handoff-{writing,sources}-{width}.png`. Screenshot review
+is agent visual evidence using test content and written design specifications;
+the separate preview was not started and no pixel comparison is claimed.
+Full draft-list visual acceptance, keyboard order, screen-reader/assistive
+technology, zoom, Firefox/WebKit, live teacher/admin persistence and snapshots,
+actual cookies/security, and the deferred Phase 1 manual Back/Forward checks
+remain pending. The default Turbopack check was not repeated; its earlier
+environment limits remain recorded below.
+
+Historical stop after recovered-handoff alignment, before independent review:
+`feat/frontend-design-drafts` had only
+`frontend/src/components/lessons-panel.tsx`,
+`frontend/test/rendered/foundation.test.mjs`, this integration record and the UI
+index modified. At that checkpoint all changes were unstaged, with an empty
+index and no untracked files. No branch operation, install, cleanup, database operation,
+stage, commit, push or merge was performed.
+
+### Final integration checklist — all phases
+
+Reference checklist retained from implementation. Current local acceptance is
+the user's report of all eight combined checks above, including the formerly
+deferred Phase 1 navigation checks. Do not interpret this broader checklist as
+evidence of database inspection or unperformed deployment/security,
+assistive-technology or other-browser verification.
+
+1. **Phase 1 shell/auth:** with real teacher and administrator accounts, verify
+   role navigation, sign-in/session restoration/logout/expiry and cookie/CSRF/CORS
+   behavior; check focus, keyboard, zoom and assistive technology.
+2. **Phase 1 navigation protection:** complete the deferred manual Back/Forward
+   and fragment checks for dirty, pending and uncertain work in both guard modes;
+   confirm URL/workspace synchronization, retained text, blocked departures and
+   reachable recovery controls.
+3. **Phase 2 teacher resources:** verify real API pagination, direct UUID detail,
+   reload, active/retired behavior, plain text and cross-account authorization.
+4. **Phase 2 administrator resources:** verify durable create/edit/retire,
+   version conflicts, exact comparison/adoption and session/navigation recovery.
+5. **Phase 2 snapshot preservation:** while a real lesson has a selected source,
+   edit/retire that resource; ordinary content save must preserve the captured
+   snapshot, explicit refresh must capture the latest active version, retired
+   sources must remain readable/removable, and refresh must fail without loss.
+6. **Phase 3 draft workflow:** create and save incomplete content, reopen after
+   reload, verify version increments and no submitted revision, and preserve
+   optional fields, empty arrays, whitespace, embedded newlines and blank versus
+   zero timings.
+7. **Phase 3 sources and concurrency:** verify source selection/removal/explicit
+   refresh separately from content saves; exercise duplicate/five-source limits,
+   two-tab conflicts, stale preconditions and explicit comparison/adoption.
+8. **Phase 3 failure/session recovery:** exercise validation, 500/502/503/504,
+   committed writes with lost responses, exact-target reads, wrong/failed/stale
+   candidate inspection, explicit acknowledgement/no-match, temporary auth pause,
+   401/expiry and confirmed account/session replacement. Assert one write only.
+9. **Cross-phase accessibility and visuals:** test keyboard-only use, focus,
+   labels, status/error announcements, sticky Save visibility and horizontal
+   overflow at 320/390/768/1024/1440px; record browser and visual evidence.
+10. **Deployment boundary:** verify the intended HTTPS cookie, CORS/CSRF, rate
+    limits, expiry and cross-account behavior separately; do not infer deployment
+    readiness from local mocked or database checks.
+
+### Explained preview steps
+
+The recovered reference is a separate preview application at
+`/home/mariga/design-work/lessonforge-ui`. With its existing dependencies,
+`npm run dev --prefix /home/mariga/design-work/lessonforge-ui` starts its design
+preview at `http://127.0.0.1:3105`; view `/drafts` there for presentation only.
+This command was not run during alignment and the reference project was not
+modified. Its simulated authentication/storage/controls are not integration
+evidence. To preview the actual implementation, use the existing LessonForge
+startup commands in the Phase 2 section below, sign in with privately configured
+accounts, then open `/drafts`. That app uses the real API/database when configured;
+the rendered tests instead intercept API responses.
 
 ## Phase 2 — resource browsing and management (2026-10-26)
+
+The following Phase 2 entry describes its original review checkpoint. Current
+Phase 3 status and the recovered design reference are recorded above.
 
 Preparation matched the request: branch `feat/frontend-design-resources`, clean
 working tree and empty index, with the Phase 1 shell, persistent workspaces,
 shared controls and independently corrected R1 navigation guard present. No
 branch operation, fetch, repository cleanup, staging or commit was performed.
-The Phase 1 record below is historical; its deferred manual checks remain pending.
+The Phase 1 record below is historical; its deferred navigation checks were
+subsequently reported passed in the user-performed local acceptance closeout.
 Phase 2 stops here for commit review; Phase 3 is unimplemented. The
 [independent Phase 2 review](phase-2-review.md) found no commit blockers. Its
 non-blocking heading hierarchy issue is corrected in the
@@ -410,7 +843,14 @@ review. The [teacher draft browser checklist](../teacher-drafts.md#local-checks-
 and full design-integration acceptance checks remain pending. The focused rendered
 tests cover selected draft interactions only; they do not complete either list.
 
-## Outstanding visual and manual checks
+## Historical visual and manual checklist
+
+This section records the earlier checkpoint and deferral. Its pending local
+acceptance/navigation statements are superseded by the user-reported closeout
+at the top of this document: all eight combined local checks passed, including
+the deferred Phase 1 navigation checks. Unperformed deployment/security,
+assistive-technology and other-browser checks remain pending; database
+inspection is not inferred. The original checklist below is retained as history.
 
 The handoff and preview are design references. Preview screenshots or automated
 checks do not establish visual fidelity, accessibility, or real persistence in the

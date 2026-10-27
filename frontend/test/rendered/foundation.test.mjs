@@ -202,10 +202,21 @@ async function fixture(identity = teacher, fallback = false) {
         void content;
         void sources;
         void generationOrigin;
-        return respond(200, { items: [summary], nextAfter: null });
+        const result = structuredClone(
+          f.lessonPage ?? { items: [summary], nextAfter: null },
+        );
+        const status = f.listStatus ?? 200;
+        f.listStarted?.resolve();
+        if (f.listHold) await f.listHold.promise;
+        return respond(status, result);
       }
-      if (url.pathname === `/lessons/${id}`)
-        return respond(f.detailStatus, f.lesson);
+      if (url.pathname === `/lessons/${f.lesson.id}`) {
+        const status = f.detailStatus;
+        const result = structuredClone(f.lesson);
+        f.detailStarted?.resolve();
+        if (f.detailHold) await f.detailHold.promise;
+        return respond(status, result);
+      }
       if (url.pathname === "/resources") {
         const { sourceReference, contentText, ...summary } = f.resource;
         void sourceReference;
@@ -257,10 +268,32 @@ async function fixture(identity = teacher, fallback = false) {
       f.resource = { ...f.resource, ...request.postDataJSON(), version: 1 };
       return respond(f.writeStatus === 200 ? 201 : f.writeStatus, f.resource);
     }
+    if (
+      method === "POST" &&
+      url.pathname.startsWith(`/lessons/${id}/resources/${resourceId}/`)
+    ) {
+      const action = url.pathname.split("/").at(-1);
+      const { title, subject, grade, sourceReference, contentText } =
+        f.resource;
+      const selection = {
+        resourceId,
+        resourceVersion: f.resource.version,
+        snapshot: { title, subject, grade, sourceReference, contentText },
+      };
+      const version = request.postDataJSON().expectedVersion;
+      if (version !== f.lesson.version) return respond(409, {});
+      f.lesson = {
+        ...f.lesson,
+        version: version + 1,
+        sources: action === "remove" ? [] : [selection],
+      };
+      return respond(f.writeStatus, f.lesson);
+    }
     if (method === "POST" && url.pathname === "/lessons") {
       const { content } = request.postDataJSON();
       f.lesson = {
         ...f.lesson,
+        id: f.creationId ?? id,
         content,
         title: content.title ?? "",
         version: 1,
@@ -278,6 +311,8 @@ async function fixture(identity = teacher, fallback = false) {
   };
   f.close = async () => {
     f.hold?.resolve();
+    f.listHold?.resolve();
+    f.detailHold?.resolve();
     await context.close();
     assert.deepEqual(errors, []);
   };
@@ -357,10 +392,8 @@ async function assertRetainedDraft(page, url) {
   );
   assert.equal(
     await page
-      .getByRole("button", {
-        name: "Load latest result (keep entered text and version)",
-        exact: true,
-      })
+      .locator("summary")
+      .filter({ hasText: "Compare saved content and recover" })
       .isVisible(),
     true,
   );
@@ -546,6 +579,7 @@ for (const fallback of [false, true]) {
     const p = f.page;
     try {
       await openLesson(f);
+      await p.getByText("Draft help and limits", { exact: true }).click();
       await p
         .getByRole("link", { name: "Edit introduction", exact: true })
         .click();
@@ -663,6 +697,11 @@ test("pending/uncertain teacher writes block navigation, logout and discard unti
       .getByRole("alert")
       .filter({ hasText: "temporarily unavailable" })
       .waitFor();
+    await p.waitForFunction(
+      () =>
+        document.activeElement?.getAttribute("role") === "alert" &&
+        document.activeElement.textContent.includes("temporarily unavailable"),
+    );
     assert.equal(
       await p
         .getByRole("button", {
@@ -1108,12 +1147,14 @@ async function assertHeadingOutline(page, expected) {
   const main = page.getByRole("main");
   await main.getByRole("heading", { level, name, exact: true }).waitFor();
   assert.deepEqual(
-    await main.getByRole("heading").evaluateAll((headings) =>
-      headings.map((heading) => [
-        Number(heading.tagName.slice(1)),
-        heading.textContent.trim(),
-      ]),
-    ),
+    await main
+      .getByRole("heading")
+      .evaluateAll((headings) =>
+        headings.map((heading) => [
+          Number(heading.tagName.slice(1)),
+          heading.textContent.trim(),
+        ]),
+      ),
     expected,
   );
 }
@@ -1152,7 +1193,9 @@ test("Phase 2 heading outline: administrator list, editors, detail and retiremen
       [1, "Manage resources"],
       [2, "Saved resource"],
     ]);
-    await p.getByRole("button", { name: "Create resource", exact: true }).click();
+    await p
+      .getByRole("button", { name: "Create resource", exact: true })
+      .click();
     await assertHeadingOutline(p, [
       [1, "Manage resources"],
       [2, "Create resource"],
@@ -1161,7 +1204,10 @@ test("Phase 2 heading outline: administrator list, editors, detail and retiremen
       p.getByRole("button", { name: "Back to resource list" }).click(),
     );
     await p
-      .getByRole("button", { name: "Manage resource: Saved resource", exact: true })
+      .getByRole("button", {
+        name: "Manage resource: Saved resource",
+        exact: true,
+      })
       .click();
     const detailOutline = [
       [1, "Manage resources"],
@@ -1175,8 +1221,12 @@ test("Phase 2 heading outline: administrator list, editors, detail and retiremen
       ...detailOutline,
       [2, "Edit resource (based on version 1)"],
     ]);
-    await p.getByRole("button", { name: "Discard entered edits", exact: true }).click();
-    await p.getByRole("button", { name: "Retire resource", exact: true }).click();
+    await p
+      .getByRole("button", { name: "Discard entered edits", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "Retire resource", exact: true })
+      .click();
     await assertHeadingOutline(p, [
       ...detailOutline,
       [3, "Retire “Saved resource”?"],
@@ -1185,7 +1235,9 @@ test("Phase 2 heading outline: administrator list, editors, detail and retiremen
       await p.evaluate(() => document.activeElement.id),
       "retire-confirm-heading",
     );
-    await p.getByRole("button", { name: "Confirm retirement", exact: true }).click();
+    await p
+      .getByRole("button", { name: "Confirm retirement", exact: true })
+      .click();
     await p.getByText(/Retired · Read-only/).waitFor();
     await assertHeadingOutline(p, detailOutline);
   } finally {
@@ -1614,6 +1666,1005 @@ test("Phase 2 admin conflict requires comparison and explicit version adoption b
       f.calls.filter((c) => c.method === "PUT").at(-1).body.expectedVersion,
       3,
     );
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 3 editor keeps array item text exact and Save visible while scrolling", async () => {
+  const f = await fixture(teacher);
+  try {
+    const p = f.page;
+    await f.goto("/drafts");
+    await p
+      .getByRole("button", { name: "New manual draft", exact: true })
+      .click();
+    await p.getByLabel("Title", { exact: true }).fill("Exact draft");
+    await p
+      .getByRole("button", { name: "Add learning objectives item" })
+      .click();
+    await p
+      .getByLabel("Learning objectives, item 1")
+      .fill("First line\nsecond line");
+    await p.getByRole("button", { name: "Add materials item" }).click();
+    await p.getByLabel("Materials, item 1").fill("  paper\nstrips  ");
+    await p.getByLabel("Introduction duration (minutes)").fill("0");
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    await p
+      .getByText("Draft saved. No submitted revision was created.")
+      .waitFor();
+    const create = f.calls
+      .filter((call) => call.method === "POST" && call.path === "/lessons")
+      .at(-1);
+    assert.deepEqual(create.body.content.learningObjectives, [
+      "First line\nsecond line",
+    ]);
+    assert.deepEqual(create.body.content.materials, ["  paper\nstrips  "]);
+    assert.equal(create.body.content.introduction.durationMinutes, 0);
+    await p
+      .getByRole("button", { name: "Close editor and discard unsaved text" })
+      .click();
+    await p.getByRole("button", { name: /Open draft: Exact draft/ }).click();
+    assert.equal(
+      await p.getByLabel("Learning objectives, item 1").inputValue(),
+      "First line\nsecond line",
+    );
+    assert.equal(
+      await p.getByLabel("Materials, item 1").inputValue(),
+      "  paper\nstrips  ",
+    );
+    assert.equal(
+      await p.getByLabel("Introduction duration (minutes)").inputValue(),
+      "0",
+    );
+    await p.getByLabel("Learning objectives, item 1").fill("Line A\nLine B");
+    assert.equal(
+      await p
+        .getByRole("status")
+        .filter({ hasText: "Unsaved changes." })
+        .count(),
+      1,
+    );
+    const save = p.getByRole("button", {
+      name: "Save draft content",
+      exact: true,
+    });
+    for (const width of [320, 390, 768, 1024, 1440]) {
+      await p.setViewportSize({ width, height: 760 });
+      await p
+        .getByLabel("Differentiation: extension activities")
+        .scrollIntoViewIfNeeded();
+      assert.equal(
+        await p.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        true,
+      );
+      assert.equal(await save.isVisible(), true);
+      const box = await save.boundingBox();
+      assert.ok(box && box.y >= 0 && box.y + box.height <= 760);
+    }
+    await save.click();
+    await p
+      .getByText("Draft saved. No submitted revision was created.")
+      .waitFor();
+    const write = f.calls.filter((call) => call.method === "PUT").at(-1);
+    assert.deepEqual(write.body.content.learningObjectives, ["Line A\nLine B"]);
+    assert.deepEqual(write.body.content.materials, ["  paper\nstrips  "]);
+    assert.equal(write.body.content.introduction.durationMinutes, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 3 handoff: draft cards, local focus, optional context and native validation", async () => {
+  const f = await fixture(teacher);
+  const p = f.page;
+  try {
+    await f.goto("/drafts");
+    const list = p.getByRole("list", { name: "My saved drafts", exact: true });
+    await list
+      .getByRole("heading", { name: "Saved lesson", exact: true })
+      .waitFor();
+    assert.equal(
+      await list.locator("time").getAttribute("datetime"),
+      lesson.updatedAt,
+    );
+    await list
+      .getByRole("button", { name: /Open draft: Saved lesson/ })
+      .click();
+    await p.waitForFunction(
+      () => document.activeElement?.id === "draft-editor-heading",
+    );
+    assert.equal(await list.count(), 0);
+    assert.equal(new URL(p.url()).pathname, "/drafts");
+    assert.equal(
+      await p.getByLabel("Subject", { exact: true }).inputValue(),
+      "",
+    );
+    assert.equal(await p.getByLabel("Grade", { exact: true }).inputValue(), "");
+    await p.getByLabel("Title", { exact: true }).focus();
+    await p.keyboard.press("Tab");
+    assert.equal(
+      await p.evaluate(() => document.activeElement?.id),
+      "lesson-subject",
+    );
+    await p.keyboard.press("Tab");
+    assert.equal(
+      await p.evaluate(() => document.activeElement?.id),
+      "lesson-grade",
+    );
+    const minutes = p.getByLabel("Total duration (minutes)");
+    await minutes.fill("1441");
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    assert.equal(f.calls.filter((c) => c.method === "PUT").length, 0);
+    assert.equal(await minutes.getAttribute("aria-invalid"), "true");
+    assert.equal(
+      await minutes.evaluate((el) => el === document.activeElement),
+      true,
+    );
+    assert.equal(
+      await minutes.evaluate((el) =>
+        el
+          .getAttribute("aria-describedby")
+          .split(" ")
+          .every((id) => document.getElementById(id)?.textContent),
+      ),
+      true,
+    );
+    await minutes.fill("0");
+    await p.getByLabel("Subject", { exact: true }).selectOption("Mathematics");
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    await p
+      .getByText("Draft saved. No submitted revision was created.")
+      .waitFor();
+    let content = f.calls.filter((c) => c.method === "PUT").at(-1).body.content;
+    assert.equal(content.subject, "Mathematics");
+    assert.equal(content.durationMinutes, 0);
+    for (const key of ["grade", "learningObjectives", "materials"])
+      assert.equal(Object.hasOwn(content, key), false);
+    await p.getByLabel("Subject", { exact: true }).selectOption("");
+    await minutes.fill("");
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    await p
+      .getByText("Draft saved. No submitted revision was created.")
+      .waitFor();
+    content = f.calls.filter((c) => c.method === "PUT").at(-1).body.content;
+    for (const key of [
+      "subject",
+      "grade",
+      "durationMinutes",
+      "learningObjectives",
+      "materials",
+    ])
+      assert.equal(Object.hasOwn(content, key), false);
+    await p
+      .getByRole("button", { name: "Close editor and discard unsaved text" })
+      .click();
+    await p.waitForFunction(
+      () => document.activeElement?.id === "drafts-heading",
+    );
+    assert.equal(await list.isVisible(), true);
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 3 handoff: responsive writing and snapshots retain separate versioned actions", async () => {
+  const f = await fixture(teacher);
+  const p = f.page;
+  try {
+    const { title, subject, grade, sourceReference, contentText } = f.resource;
+    f.lesson.sources = [
+      {
+        resourceId,
+        resourceVersion: 1,
+        snapshot: { title, subject, grade, sourceReference, contentText },
+      },
+    ];
+    f.resource = {
+      ...f.resource,
+      version: 2,
+      contentText: "Updated source text",
+    };
+    await openLesson(f);
+    const sources = p.getByRole("region", {
+      name: "Selected resource snapshots (saved separately)",
+      exact: true,
+    });
+    await sources
+      .getByRole("heading", { name: "Saved resource · Selected version 1" })
+      .waitFor();
+    await sources
+      .getByText("Read retained resource text", { exact: true })
+      .click();
+    assert.equal(
+      await sources.getByText("Test text", { exact: true }).isVisible(),
+      true,
+    );
+    assert.equal(
+      await sources.getByText("Updated source text", { exact: true }).count(),
+      0,
+    );
+    const save = p.getByRole("button", {
+      name: "Save draft content",
+      exact: true,
+    });
+    for (const width of [320, 390, 768, 1024, 1440]) {
+      await p.setViewportSize({ width, height: 900 });
+      const columns = await p
+        .locator("[data-draft-columns]")
+        .evaluate(
+          (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+        );
+      assert.equal(columns, width >= 1280 ? 2 : 1);
+      const titleField = p.getByLabel("Title", { exact: true });
+      await titleField.evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await titleField.focus();
+      const titleBox = await titleField.boundingBox();
+      const saveBar = await p
+        .getByRole("region", { name: "Draft save controls", exact: true })
+        .boundingBox();
+      assert.ok(
+        titleBox && saveBar && titleBox.y >= saveBar.y + saveBar.height,
+      );
+      assert.equal(
+        await p.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        true,
+      );
+      await p.screenshot({
+        path: `/tmp/lessonforge-phase3-handoff-writing-${width}.png`,
+      });
+      await sources
+        .getByRole("heading", {
+          name: "Saved resource · Selected version 1",
+          exact: true,
+        })
+        .evaluate((el) => {
+          window.scrollBy({ top: el.getBoundingClientRect().top - 160 });
+        });
+      const bar = await p
+        .getByRole("region", { name: "Draft save controls", exact: true })
+        .boundingBox();
+      const button = await save.boundingBox();
+      assert.ok(
+        bar && button && button.y >= 0 && button.y + button.height <= 900,
+      );
+      assert.equal(
+        await p.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        true,
+      );
+      await p.screenshot({
+        path: `/tmp/lessonforge-phase3-handoff-sources-${width}.png`,
+      });
+    }
+    await sources
+      .getByRole("button", {
+        name: "Refresh from latest active resource",
+        exact: true,
+      })
+      .click();
+    await sources.getByText("Updated source text", { exact: true }).waitFor();
+    assert.equal(
+      await p.getByLabel("Title", { exact: true }).inputValue(),
+      "Retained lesson text",
+    );
+    assert.equal(f.calls.filter((c) => c.method === "PUT").length, 0);
+    let sourceWrite = f.calls.filter((c) => c.path.endsWith("/refresh")).at(-1);
+    assert.deepEqual(sourceWrite.body, { expectedVersion: 1 });
+    await save.click();
+    await p
+      .getByText("Draft saved. No submitted revision was created.")
+      .waitFor();
+    assert.equal(
+      f.calls.filter((c) => c.method === "PUT").at(-1).body.expectedVersion,
+      2,
+    );
+    assert.equal(f.lesson.sources[0].resourceVersion, 2);
+    await p
+      .getByLabel("Title", { exact: true })
+      .fill("Unsaved after source refresh");
+    await sources
+      .getByRole("button", { name: "Remove selection", exact: true })
+      .click();
+    await sources
+      .getByText("No resources selected.", { exact: false })
+      .waitFor();
+    assert.deepEqual(
+      f.calls.filter((c) => c.path.endsWith("/remove")).at(-1).body,
+      { expectedVersion: 3 },
+    );
+    await sources
+      .getByRole("button", { name: "Browse active resources", exact: true })
+      .click();
+    await sources
+      .getByRole("button", { name: "Saved resource · Version 2", exact: true })
+      .click();
+    await sources
+      .getByRole("button", {
+        name: "Select latest active resource",
+        exact: true,
+      })
+      .click();
+    await sources
+      .getByRole("heading", { name: "Saved resource · Selected version 2" })
+      .waitFor();
+    sourceWrite = f.calls.filter((c) => c.path.endsWith("/select")).at(-1);
+    assert.deepEqual(sourceWrite.body, { expectedVersion: 4 });
+    assert.equal(
+      await p.getByLabel("Title", { exact: true }).inputValue(),
+      "Unsaved after source refresh",
+    );
+    assert.equal(f.calls.filter((c) => c.method === "PUT").length, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 3 corrections: R1 timing feedback follows current validity after activity removal", async () => {
+  const f = await fixture();
+  const p = f.page;
+  try {
+    f.lesson.content.activities = [
+      { teacherTasks: "  first\nactivity  ", durationMinutes: 1 },
+      { learnerTasks: "  retained\ntext  ", durationMinutes: 5 },
+    ];
+    await f.goto("/drafts");
+    await p.getByRole("button", { name: /Open draft: Saved lesson/ }).click();
+    const timings = p.getByLabel("Activity duration (minutes)", {
+      exact: true,
+    });
+    await timings.nth(0).fill("1441");
+    assert.equal(await timings.nth(0).getAttribute("aria-invalid"), "true");
+    await p
+      .getByRole("group", { name: "Activity 1", exact: true })
+      .getByRole("button", { name: "Remove activity 1", exact: true })
+      .click();
+    const remaining = timings.first();
+    const assertValid = async () => {
+      assert.equal(await timings.count(), 1);
+      assert.equal(await remaining.inputValue(), "5");
+      assert.equal(await remaining.evaluate((el) => el.validity.valid), true);
+      assert.equal(await remaining.getAttribute("aria-invalid"), null);
+      assert.equal(
+        await p.getByRole("alert").filter({ hasText: /\S/ }).count(),
+        0,
+      );
+      assert.equal(
+        await remaining.evaluate((el) =>
+          el
+            .getAttribute("aria-describedby")
+            .split(" ")
+            .some(
+              (id) =>
+                document.getElementById(id)?.getAttribute("role") === "alert",
+            ),
+        ),
+        false,
+      );
+    };
+    await assertValid();
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    await p
+      .getByText("Draft saved. No submitted revision was created.")
+      .waitFor();
+    await assertValid();
+    assert.deepEqual(
+      f.calls.filter((c) => c.method === "PUT").map((c) => c.body),
+      [
+        {
+          expectedVersion: 1,
+          content: {
+            title: "Saved lesson",
+            introduction: { text: "Saved introduction" },
+            activities: [
+              { learnerTasks: "  retained\ntext  ", durationMinutes: 5 },
+            ],
+          },
+        },
+      ],
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+for (const width of [320, 390, 768, 1024, 1440]) {
+  test(`Phase 3 corrections: D1 initial open/create and scrolled Save at ${width}px`, async () => {
+    const f = await fixture();
+    const p = f.page;
+    try {
+      await p.setViewportSize({ width, height: 900 });
+      await f.goto("/drafts");
+      for (const mode of ["open", "create"]) {
+        await p
+          .getByRole("button", {
+            name:
+              mode === "open" ? /Open draft: Saved lesson/ : "New manual draft",
+            exact: mode === "create",
+          })
+          .click();
+        await p.waitForFunction(
+          () => document.activeElement?.id === "draft-editor-heading",
+        );
+        assert.equal(
+          await p
+            .getByText("Create a draft or open one of your saved drafts.", {
+              exact: true,
+            })
+            .count(),
+          0,
+        );
+        assert.equal(
+          await p.getByText("No lesson is open.", { exact: false }).count(),
+          0,
+        );
+        assert.equal(
+          await p
+            .locator("details")
+            .filter({
+              has: p.locator("summary", { hasText: "Draft help and limits" }),
+            })
+            .getAttribute("open"),
+          null,
+        );
+        assert.equal(
+          await p
+            .locator("details")
+            .filter({
+              has: p.locator("summary", {
+                hasText: "Compare saved content and recover",
+              }),
+            })
+            .getAttribute("open"),
+          null,
+        );
+        const titleBox = await p
+          .getByLabel("Title", { exact: true })
+          .boundingBox();
+        const save = p.getByRole("button", {
+          name: "Save draft content",
+          exact: true,
+        });
+        const saveBox = await save.boundingBox();
+        assert.ok(
+          titleBox && titleBox.y >= 0 && titleBox.y + titleBox.height <= 900,
+          `Initial ${mode} title outside viewport: ${JSON.stringify(titleBox)}`,
+        );
+        assert.ok(
+          saveBox && saveBox.y >= 0 && saveBox.y + saveBox.height <= 900,
+        );
+        assert.equal(
+          await p.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth,
+          ),
+          true,
+        );
+        await p.screenshot({
+          path: `/tmp/lessonforge-phase3-corrections-${mode}-${width}.png`,
+        });
+        await p
+          .getByLabel("Differentiation: extension activities")
+          .scrollIntoViewIfNeeded();
+        const scrolled = await save.boundingBox();
+        assert.ok(
+          scrolled && scrolled.y >= 0 && scrolled.y + scrolled.height <= 900,
+        );
+        assert.equal(
+          await p.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth,
+          ),
+          true,
+        );
+        if (mode === "open") {
+          await p
+            .getByRole("button", {
+              name: "Close editor and discard unsaved text",
+            })
+            .click();
+          await p
+            .getByRole("button", { name: "New manual draft", exact: true })
+            .waitFor({ state: "visible" });
+          await p.waitForFunction(
+            () =>
+              !document.querySelector('button[aria-label^="Open draft"]')
+                ?.disabled,
+          );
+        }
+      }
+      assert.equal(f.calls.filter((c) => c.method !== "GET").length, 0);
+    } finally {
+      await f.close();
+    }
+  });
+}
+
+test("Phase 3 corrections: D1 disclosures and comparison reads never write or adopt; failed inspection and conflict expose recovery", async () => {
+  const f = await fixture();
+  const p = f.page;
+  try {
+    await openLesson(f);
+    const details = p.locator("details").filter({
+      has: p.locator("summary", {
+        hasText: "Compare saved content and recover",
+      }),
+    });
+    const summary = details.locator(":scope > summary");
+    const read = p.getByRole("button", {
+      name: "Load latest result (keep entered text and version)",
+      exact: true,
+    });
+    await summary.focus();
+    await p.keyboard.press("Enter");
+    assert.equal(await read.isVisible(), true);
+    const requestsBeforeToggle = f.calls.length;
+    await p.keyboard.press("Space");
+    assert.equal(await details.getAttribute("open"), null);
+    await p.keyboard.press("Space");
+    assert.equal(await read.isVisible(), true);
+    assert.equal(f.calls.length, requestsBeforeToggle);
+    assert.equal(f.calls.filter((c) => c.method !== "GET").length, 0);
+    f.lesson = {
+      ...f.lesson,
+      title: "Other writer",
+      version: 3,
+      content: { title: "Other writer" },
+    };
+    await read.click();
+    await p
+      .getByRole("heading", { name: "Latest saved result · Version 3" })
+      .waitFor();
+    assert.equal(
+      await p.getByLabel("Title", { exact: true }).inputValue(),
+      "Retained lesson text",
+    );
+    assert.equal(
+      await p
+        .getByRole("heading", { name: "Edit draft · based on version 1" })
+        .isVisible(),
+      true,
+    );
+    assert.equal(f.calls.filter((c) => c.method !== "GET").length, 0);
+    const held = (f.detailHold = deferred());
+    const detailStarted = (f.detailStarted = deferred());
+    f.detailStatus = 503;
+    const readsBefore = f.calls.filter(
+      (c) => c.path === `/lessons/${id}`,
+    ).length;
+    await read.click();
+    await detailStarted.promise;
+    await p.waitForFunction(
+      () =>
+        document
+          .querySelector('section[aria-labelledby="draft-editor-heading"]')
+          ?.getAttribute("aria-busy") === "true",
+    );
+    assert.equal(
+      f.calls.filter((c) => c.path === `/lessons/${id}`).length,
+      readsBefore + 1,
+    );
+    await summary.click();
+    assert.equal(await details.getAttribute("open"), null);
+    held.resolve();
+    await p
+      .getByRole("alert")
+      .filter({ hasText: "temporarily unavailable" })
+      .waitFor();
+    await read.waitFor({ state: "visible" });
+    assert.equal(await details.getAttribute("open"), "");
+    assert.equal(
+      await p
+        .getByRole("heading", { name: "Latest saved result · Version 3" })
+        .count(),
+      0,
+    );
+    assert.equal(
+      await p
+        .getByRole("button", {
+          name: "I checked the result; allow another action",
+        })
+        .count(),
+      0,
+    );
+    assert.equal(f.calls.filter((c) => c.method !== "GET").length, 0);
+    await summary.click();
+    f.writeStatus = 409;
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    await p
+      .getByText("Saving is paused after a conflict.", { exact: false })
+      .waitFor();
+    assert.equal(await details.getAttribute("open"), "");
+    assert.equal(
+      await p
+        .getByRole("button", { name: "Save draft content", exact: true })
+        .isDisabled(),
+      true,
+    );
+    assert.equal(
+      await p.getByLabel("Title", { exact: true }).inputValue(),
+      "Retained lesson text",
+    );
+    assert.equal(f.calls.filter((c) => c.method === "PUT").length, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 3 corrections: D2 distinct creation ID and renamed summaries reopen without manual Reload", async () => {
+  const f = await fixture();
+  const p = f.page;
+  try {
+    f.creationId = "55555555-5555-4555-8555-555555555555";
+    await f.goto("/drafts");
+    await p
+      .getByRole("button", { name: "New manual draft", exact: true })
+      .click();
+    await p.getByLabel("Title", { exact: true }).fill("New distinct draft");
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    await p
+      .getByText("Draft saved. No submitted revision was created.")
+      .waitFor();
+    for (const [name, version] of [
+      ["New distinct draft", 1],
+      ["Renamed distinct draft", 2],
+    ]) {
+      const listReads = f.calls.filter(
+        (c) => c.method === "GET" && c.path === "/lessons",
+      ).length;
+      await p
+        .getByRole("button", { name: "Close editor and discard unsaved text" })
+        .click();
+      await p
+        .getByRole("button", {
+          name: `Open draft: ${name} · Saved version ${version}`,
+          exact: true,
+        })
+        .click();
+      assert.equal(
+        f.calls.filter((c) => c.method === "GET" && c.path === "/lessons")
+          .length,
+        listReads + 1,
+      );
+      assert.equal(
+        f.calls.filter(
+          (c) => c.path === `/lessons/${f.creationId}` && c.method === "GET",
+        ).length,
+        version,
+      );
+      assert.equal(
+        await p.getByLabel("Title", { exact: true }).inputValue(),
+        name,
+      );
+      if (version === 1) {
+        await p
+          .getByLabel("Title", { exact: true })
+          .fill("Renamed distinct draft");
+        await p
+          .getByRole("button", { name: "Save draft content", exact: true })
+          .click();
+        await p
+          .getByText("Draft saved. No submitted revision was created.")
+          .waitFor();
+      }
+    }
+    assert.equal(
+      f.calls.filter((c) => c.method === "POST" && c.path === "/lessons")
+        .length,
+      1,
+    );
+    assert.deepEqual(
+      f.calls
+        .filter((c) => c.method === "PUT")
+        .map((c) => ({ path: c.path, version: c.body.expectedVersion })),
+      [{ path: `/lessons/${f.creationId}`, version: 1 }],
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 3 corrections: D2 returned-list loading and failure require explicit read recovery", async () => {
+  const f = await fixture();
+  const p = f.page;
+  try {
+    await f.goto("/drafts");
+    await p.getByRole("button", { name: /Open draft: Saved lesson/ }).click();
+    f.listStatus = 503;
+    const held = (f.listHold = deferred());
+    const listStarted = (f.listStarted = deferred());
+    await p
+      .getByRole("button", { name: "Close editor and discard unsaved text" })
+      .click();
+    await p
+      .getByRole("status")
+      .filter({ hasText: /^Loading…$/ })
+      .waitFor();
+    await listStarted.promise;
+    assert.equal(
+      await p.getByText("No drafts on this page.", { exact: true }).count(),
+      0,
+    );
+    assert.equal(
+      await p.getByRole("button", { name: /Open draft:/ }).count(),
+      0,
+    );
+    assert.equal(
+      await p
+        .getByRole("button", { name: "Reload drafts", exact: true })
+        .isDisabled(),
+      true,
+    );
+    held.resolve();
+    await p
+      .getByRole("alert")
+      .filter({ hasText: "temporarily unavailable" })
+      .waitFor();
+    assert.equal(
+      await p.getByText("No drafts on this page.", { exact: true }).count(),
+      0,
+    );
+    f.listStatus = 200;
+    await p.getByRole("button", { name: "Reload drafts", exact: true }).click();
+    await p.getByRole("button", { name: /Open draft: Saved lesson/ }).waitFor();
+    assert.equal(
+      await p.getByRole("alert").filter({ hasText: /\S/ }).count(),
+      0,
+    );
+    assert.equal(f.calls.filter((c) => c.method !== "GET").length, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 3 corrections: D2 late return response cannot populate a replacement session", async () => {
+  const f = await fixture();
+  const p = f.page;
+  try {
+    await f.goto("/drafts");
+    await p.getByRole("button", { name: /Open draft: Saved lesson/ }).click();
+    const held = (f.listHold = deferred());
+    const listStarted = (f.listStarted = deferred());
+    await p
+      .getByRole("button", { name: "Close editor and discard unsaved text" })
+      .click();
+    await p
+      .getByRole("status")
+      .filter({ hasText: /^Loading…$/ })
+      .waitFor();
+    await listStarted.promise;
+    f.listHold = null;
+    f.identity = { ...teacher, expiresAt: "2031-01-01T08:00:00.000Z" };
+    f.lesson = {
+      ...f.lesson,
+      title: "Replacement session result",
+      content: { title: "Replacement session result" },
+    };
+    await account(p)
+      .getByRole("button", { name: "Check session again", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: /Open draft: Replacement session result/ })
+      .waitFor();
+    held.resolve();
+    await p.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    assert.equal(
+      await p.getByRole("button", { name: /Open draft: Saved lesson/ }).count(),
+      0,
+    );
+    await p
+      .getByRole("button", { name: /Open draft: Replacement session result/ })
+      .click();
+    assert.equal(
+      await p.getByLabel("Title", { exact: true }).inputValue(),
+      "Replacement session result",
+    );
+    assert.equal(f.calls.filter((c) => c.method !== "GET").length, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 3 corrections: R1 a shifted invalid activity gets its own current native feedback", async () => {
+  const f = await fixture();
+  const p = f.page;
+  try {
+    f.lesson.content.activities = [
+      { durationMinutes: 1 },
+      { durationMinutes: 5 },
+    ];
+    await f.goto("/drafts");
+    await p.getByRole("button", { name: /Open draft: Saved lesson/ }).click();
+    const timings = p.getByLabel("Activity duration (minutes)", {
+      exact: true,
+    });
+    await timings.nth(0).fill("1441");
+    await timings.nth(1).fill("-1");
+    await p
+      .getByRole("button", { name: "Remove activity 1", exact: true })
+      .click();
+    const remaining = timings.first();
+    assert.equal(await remaining.inputValue(), "-1");
+    assert.equal(await remaining.getAttribute("aria-invalid"), "true");
+    const message = await remaining.evaluate((el) => el.validationMessage);
+    assert.equal(
+      await p
+        .getByRole("group", { name: "Activity 1", exact: true })
+        .getByRole("alert")
+        .textContent(),
+      message,
+    );
+    assert.equal(
+      await p
+        .getByText("Value must be less than or equal to 1440.", { exact: true })
+        .count(),
+      0,
+    );
+    await remaining.fill("0");
+    assert.equal(await remaining.getAttribute("aria-invalid"), null);
+    assert.equal(
+      await p.getByRole("alert").filter({ hasText: /\S/ }).count(),
+      0,
+    );
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    await p
+      .getByText("Draft saved. No submitted revision was created.")
+      .waitFor();
+    assert.deepEqual(
+      f.calls.filter((c) => c.method === "PUT").at(-1).body.content.activities,
+      [{ durationMinutes: 0 }],
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 3 corrections: R1 local row identity separates invalid native text from an unset timing", async () => {
+  const f = await fixture();
+  const p = f.page;
+  try {
+    f.lesson.content.activities = [{}, {}];
+    await f.goto("/drafts");
+    await p.getByRole("button", { name: /Open draft: Saved lesson/ }).click();
+    const timings = p.getByLabel("Activity duration (minutes)", {
+      exact: true,
+    });
+    await timings.nth(0).press("e");
+    assert.equal(
+      await timings.nth(0).evaluate((el) => el.validity.badInput),
+      true,
+    );
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    assert.equal(f.calls.filter((c) => c.method === "PUT").length, 0);
+    assert.equal(await timings.nth(0).getAttribute("aria-invalid"), "true");
+    assert.equal(
+      await timings.nth(1).evaluate((el) => el.validity.valid),
+      true,
+    );
+    await p
+      .getByRole("button", { name: "Remove activity 1", exact: true })
+      .click();
+    assert.equal(await timings.count(), 1);
+    assert.equal(await timings.first().inputValue(), "");
+    assert.equal(
+      await timings.first().evaluate((el) => el.validity.valid),
+      true,
+    );
+    assert.equal(await timings.first().getAttribute("aria-invalid"), null);
+    assert.equal(
+      await p.getByRole("alert").filter({ hasText: /\S/ }).count(),
+      0,
+    );
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    await p
+      .getByText("Draft saved. No submitted revision was created.")
+      .waitFor();
+    assert.deepEqual(
+      f.calls.filter((c) => c.method === "PUT").at(-1).body.content.activities,
+      [{}],
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("Phase 3 corrections: D2 paused return read never reports a confirmed empty page or resumes itself", async () => {
+  const f = await fixture();
+  const p = f.page;
+  try {
+    await f.goto("/drafts");
+    await p.getByRole("button", { name: /Open draft: Saved lesson/ }).click();
+    f.lessonPage = { items: [], nextAfter: null };
+    const held = (f.listHold = deferred());
+    const started = (f.listStarted = deferred());
+    await p
+      .getByRole("button", { name: "Close editor and discard unsaved text" })
+      .click();
+    await started.promise;
+    f.meStatus = 503;
+    await account(p)
+      .getByRole("button", { name: "Check session again", exact: true })
+      .click();
+    await p
+      .getByText(
+        "Draft controls are paused while your session is unconfirmed.",
+        { exact: false },
+      )
+      .waitFor();
+    held.resolve();
+    const reads = f.calls.filter(
+      (c) => c.method === "GET" && c.path === "/lessons",
+    ).length;
+    f.meStatus = 200;
+    f.listHold = null;
+    await account(p)
+      .getByRole("button", { name: "Check session again", exact: true })
+      .click();
+    const reload = p.getByRole("button", {
+      name: "Reload drafts",
+      exact: true,
+    });
+    await p
+      .getByText(
+        "Draft controls are paused while your session is unconfirmed.",
+        { exact: false },
+      )
+      .waitFor({ state: "hidden" });
+    await p.waitForFunction(
+      () =>
+        ![...document.querySelectorAll("button")].find(
+          (b) => b.textContent.trim() === "Reload drafts",
+        )?.disabled,
+    );
+    assert.equal(
+      await p
+        .getByText("Load drafts to see your saved lessons.", { exact: true })
+        .isVisible(),
+      true,
+    );
+    assert.equal(
+      await p.getByText("No drafts on this page.", { exact: true }).count(),
+      0,
+    );
+    assert.equal(
+      f.calls.filter((c) => c.method === "GET" && c.path === "/lessons").length,
+      reads,
+    );
+    await reload.click();
+    await p.getByText("No drafts on this page.", { exact: true }).waitFor();
+    assert.equal(
+      f.calls.filter((c) => c.method === "GET" && c.path === "/lessons").length,
+      reads + 1,
+    );
+    assert.equal(f.calls.filter((c) => c.method !== "GET").length, 0);
   } finally {
     await f.close();
   }

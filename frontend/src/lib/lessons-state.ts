@@ -15,6 +15,7 @@ type Write = {
   targetId: string | null;
 };
 export type LessonState = LessonPage & {
+  listLoaded: boolean;
   form: DraftContent | null;
   editId: string | null;
   baseVersion: number | null;
@@ -34,6 +35,7 @@ export type LessonState = LessonPage & {
 export const initialLessonState: LessonState = {
   items: [],
   nextAfter: null,
+  listLoaded: false,
   form: null,
   editId: null,
   baseVersion: null,
@@ -132,6 +134,12 @@ export function createLessonsState(
       if (reason === "unauthenticated") sessionEnded();
     }
   }
+  const list = (after?: string) =>
+    run(null, async (signal) => ({
+      ...(await api.list(after, signal)),
+      listLoaded: true,
+      creationListChecked: state.uncertain?.type === "create",
+    }));
   return {
     getSnapshot: () => state,
     subscribe: (fn: () => void) => {
@@ -174,11 +182,7 @@ export function createLessonsState(
         activeWrite = null;
       }
     },
-    list: (after?: string) =>
-      run(null, async (signal) => ({
-        ...(await api.list(after, signal)),
-        creationListChecked: state.uncertain?.type === "create",
-      })),
+    list,
     resources: (after?: string) =>
       run(null, async (signal) => {
         if (!resources) return {};
@@ -231,15 +235,21 @@ export function createLessonsState(
       if (idle() && state.form) update({ form: structuredClone(content) });
     },
     close: () => {
-      if (idle() && !state.uncertain)
-        update({
-          form: null,
-          editId: null,
-          baseVersion: null,
-          saved: null,
-          latest: null,
-          blocked: false,
-        });
+      if (!idle() || state.uncertain) return Promise.resolve();
+      update({
+        form: null,
+        editId: null,
+        baseVersion: null,
+        saved: null,
+        latest: null,
+        blocked: false,
+        items: [],
+        nextAfter: null,
+        listLoaded: false,
+      });
+      // Return to the authoritative first page, including newly saved summaries.
+      // This is only a read; uncertain writes cannot reach this path.
+      return list();
     },
     save: () => {
       const { form, editId, baseVersion } = state;
@@ -292,6 +302,7 @@ export function createLessonsState(
               }
             : {
                 ...(await api.list(undefined, signal)),
+                listLoaded: true,
                 reconciled: false,
                 creationListChecked: state.uncertain?.type === "create",
               },
