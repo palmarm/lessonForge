@@ -7,6 +7,7 @@ import { useAuth } from "./auth-provider";
 import { AuthPanel } from "./auth-panel";
 import { LessonsPanel } from "./lessons-panel";
 import { ResourcesPanel } from "./resources-panel";
+import { AdministratorReviewsPanel } from "./lesson-review-panel";
 import { Button } from "./ui-controls";
 import { useWorkspaceNavigation } from "./workspace-navigation";
 
@@ -31,8 +32,19 @@ function PersistentWorkspaces({
         <ResourcesPanel />
       </div>
       {!admin && (
-        <div hidden={pathname !== "/drafts"}>
+        <div
+          hidden={
+            pathname !== "/drafts" &&
+            pathname !== "/history" &&
+            !pathname.startsWith("/history/")
+          }
+        >
           <LessonsPanel />
+        </div>
+      )}
+      {admin && (
+        <div hidden={pathname !== "/admin/reviews"}>
+          <AdministratorReviewsPanel />
         </div>
       )}
     </>
@@ -47,14 +59,19 @@ export function ApplicationShell({ children }: { children: React.ReactNode }) {
   const admin = auth.identity?.user.role === "ADMIN";
   const ready = auth.status === "authenticated" && auth.pending === null;
   const navigation = admin
-    ? [{ href: "/admin/resources", label: "Manage resources" }]
+    ? [
+        { href: "/admin/resources", label: "Manage resources" },
+        { href: "/admin/reviews", label: "Review submissions" },
+      ]
     : [
         { href: "/resources", label: "Resources" },
         { href: "/drafts", label: "My drafts" },
+        { href: "/history", label: "Revision history" },
       ];
   const workspaceRoute =
     navigation.some((item) => item.href === pathname) ||
-    (!admin && pathname.startsWith("/resources/"));
+    (!admin &&
+      (pathname.startsWith("/resources/") || pathname.startsWith("/history/")));
   useEffect(() => {
     const heading = main.current?.querySelector<HTMLElement>("h1");
     heading?.focus();
@@ -80,8 +97,8 @@ export function ApplicationShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 aria-current={
                   pathname === item.href ||
-                  (item.href === "/resources" &&
-                    pathname.startsWith("/resources/"))
+                  ((item.href === "/resources" || item.href === "/history") &&
+                    pathname.startsWith(`${item.href}/`))
                     ? "page"
                     : undefined
                 }

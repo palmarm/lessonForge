@@ -28,6 +28,7 @@ export type LessonState = LessonPage & {
   reconciled: boolean;
   creationListChecked: boolean;
   blocked: boolean;
+  workflowLocked: boolean;
   resourceItems: ResourceSummary[];
   resourceNext: string | null;
   resourceDetail: Resource | null;
@@ -48,6 +49,7 @@ export const initialLessonState: LessonState = {
   reconciled: false,
   creationListChecked: false,
   blocked: false,
+  workflowLocked: false,
   resourceItems: [],
   resourceNext: null,
   resourceDetail: null,
@@ -84,7 +86,8 @@ export function createLessonsState(
     state = { ...state, ...patch };
     listeners.forEach((fn) => fn());
   };
-  const idle = () => alive && !paused && !state.pending;
+  const idle = () =>
+    alive && !paused && !state.pending && !state.workflowLocked;
   async function run(
     operation: Write | null,
     request: (signal: AbortSignal) => Promise<Partial<LessonState>>,
@@ -181,6 +184,26 @@ export function createLessonsState(
         });
         activeWrite = null;
       }
+    },
+    // A workflow operation coordinates with saves/sources synchronously, before React renders.
+    setWorkflowLock: (value: boolean) => {
+      if (alive) update({ workflowLocked: value });
+    },
+    submissionConflict: () => {
+      if (alive) update({ blocked: true });
+    },
+    submissionFinished: (id: string) => {
+      if (!alive || state.editId !== id) return;
+      update({
+        form: null,
+        editId: null,
+        baseVersion: null,
+        saved: null,
+        latest: null,
+        blocked: false,
+        items: state.items.filter((item) => item.id !== id),
+        listLoaded: false,
+      });
     },
     list,
     resources: (after?: string) =>
