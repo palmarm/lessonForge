@@ -141,9 +141,12 @@ tracked in [frontend verification](frontend-authentication-verification.md). Cur
 resource management and browsing are implemented; resource browser checklist
 completion was developer-reported on 2026-10-19. Teacher drafts and resource
 selection/removal/refresh are implemented with bounded structural validation;
-see [draft contracts and evidence](teacher-drafts.md). Resource seeding, submission
-completeness validation, submission/review/library/copy workflows and AI remain
-pending. Draft acceptance does not establish submission completeness.
+see [draft contracts and evidence](teacher-drafts.md). Resource seeding,
+approved-library browsing/copying and AI remain pending. Backend submission
+completeness, immutable submissions, administrator review, requested-change drafts,
+resubmission and authorized history/queue reads are implemented; see the
+[workflow API and frontend handoff](lesson-review.md). Its frontend remains pending.
+Draft acceptance alone does not establish submission completeness.
 See [resource contracts](curriculum-resources.md)
 for validation limits and retirement/concurrency choices. See
 [domain verification](domain-schema-verification.md) for the storage checks.

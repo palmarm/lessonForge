@@ -46,7 +46,7 @@ export function configureAuthHttp(
   app.use((req: Request, res: Response, next: NextFunction) => {
     // Curriculum text and lesson drafts share a bounded budget; auth retains 4 KiB.
     const parser =
-      /^\/(?:resources(?:\/[0-9a-f-]{36}(?:\/retire)?)?|lessons(?:\/[0-9a-f-]{36}(?:\/resources\/[0-9a-f-]{36}\/(?:select|remove|refresh))?)?)\/?$/i.test(
+      /^\/(?:resources(?:\/[0-9a-f-]{36}(?:\/retire)?)?|lessons(?:\/[0-9a-f-]{36}(?:\/submit|\/revisions\/[0-9a-f-]{36}\/review|\/resources\/[0-9a-f-]{36}\/(?:select|remove|refresh))?)?)\/?$/i.test(
         req.path,
       )
         ? parseResource

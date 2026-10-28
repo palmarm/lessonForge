@@ -1,5 +1,11 @@
 # LessonForge teacher drafts
 
+Current backend submission/review support is documented in
+[workflow contracts and verification](lesson-review.md). The original draft
+implementation scope and historical evidence below remain unchanged. Existing
+draft endpoints still expose only editable DRAFT/CHANGES_REQUESTED lessons;
+use the new revision/history endpoints for pending/approved lessons and feedback.
+
 ## Implemented scope
 
 Teachers can create, list, open and save their own incomplete manual drafts, and
