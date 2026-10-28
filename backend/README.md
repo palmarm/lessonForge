@@ -60,7 +60,8 @@ Session migration. On 2026-10-13 the developer confirmed both migrations, connec
 build/compiled startup, expected root/me responses, prompt shutdown, and cleanup
 deleting zero invalid sessions (exit 0). Backend authentication and guarded local
 account provisioning are implemented; developer provisioning, frontend sign-in,
-seeding, workflow services, AI, and deployment remain pending. See the [CI guide](../docs/ci.md)
+seeding, AI, and deployment remain pending. Current submission/review services are
+documented below; the preceding evidence describes the earlier authentication milestone. See the [CI guide](../docs/ci.md)
 for the developer-confirmed successful workflow; CI remains database-free.
 
 Backend auth endpoints are `POST /auth/login`, `GET /auth/me`, and
@@ -88,3 +89,19 @@ See [provisioning setup](../docs/development-setup.md#safe-local-account-provisi
 `npm run test:accounts:db --prefix backend` tests the shared service only on another
 fresh guarded disposable target; it never invokes the real CLI against development.
 Frontend login remains a separate step.
+
+Backend submission and administrator review are implemented without schema changes.
+See [the workflow API](../docs/lesson-review.md) for exact endpoints/envelopes,
+UTF-16 feedback bounds, UUID pagination, lost-response reconciliation and frontend
+handoff. Submitted history and sources are immutable; review is administrator-only.
+Read transactions use read-only REPEATABLE READ snapshots. Mutations lock the
+lesson first, validate its expected version and transition atomically, retaining
+trusted resource snapshots even after resource retirement. Repeated actions conflict.
+
+`npm run test:lessons:db` now includes real submission/save/decision lock waits,
+post-write rollback and history preservation. It requires a fresh empty guarded
+disposable database, never `.env` or `DATABASE_URL`; follow the
+[existing disposable procedure](../docs/teacher-drafts.md#separate-live-postgresql-suite).
+No package installation is required when using the existing dependencies. To avoid
+loading real configuration, run verification from an isolated copy excluding all
+`.env*` files. Library browsing/copying, workflow frontend and AI remain separate.

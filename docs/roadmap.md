@@ -87,22 +87,23 @@ available demonstration material.
 - [x] Correct creation candidate reconciliation and add observed lifecycle lock-wait coverage; clarify resource browsing versus lesson editing and saved/unsaved content (2026-10-21; see [correction evidence](teacher-drafts.md#correction-verification-2026-10-21)).
 - [ ] Complete the [teacher draft browser checklist](teacher-drafts.md#local-checks-and-browser-checklist) and automated rendered interaction coverage.
 
-Draft validity is implemented; submission completeness validation remains in
-milestone 3. See [contracts, checks and gaps](teacher-drafts.md). No schema change.
+Draft validity is implemented; submission completeness is implemented separately in
+milestone 3. See [draft contracts](teacher-drafts.md) and
+[workflow contracts](lesson-review.md). No schema change.
 
 Demonstration: a teacher selects resources and saves a draft, with unauthorized
-edits rejected and draft validation feedback. Submission validation is deferred.
+edits rejected and draft validation feedback. Submission uses the separate workflow API.
 
 ### 3. Review and approved library
 
-- [ ] Implement backend submission completeness validation, including required fields, sources and section timings.
-- [ ] Submit validated lessons and preserve immutable submitted revisions and source snapshots.
-- [ ] Implement administrator review of the exact submitted revision.
-- [ ] Request changes with feedback.
-- [ ] Revise and resubmit while retaining history.
-- [ ] Approve lessons for the library.
+- [x] Implement backend submission completeness validation, including required fields, sources and section timings.
+- [x] Submit validated lessons and preserve immutable submitted revisions and source snapshots (backend).
+- [x] Implement administrator review of the exact submitted revision (backend API; frontend pending).
+- [x] Request changes with feedback (backend).
+- [x] Revise and resubmit while retaining history (backend).
+- [x] Approve exact revisions for library eligibility (backend; library browsing pending).
 - [ ] Browse approved lessons and copy them into new teacher-owned drafts with retained source snapshots.
-- [ ] Verify conflicting edits and review decisions are handled safely.
+- [x] Verify conflicting edits and review decisions are handled safely in backend tests; see [workflow evidence](lesson-review.md#verification).
 - [ ] Verify the complete manual workflow, including permissions and failure cases.
 
 Demonstration: complete submission, feedback, resubmission, approval, browsing,
@@ -167,8 +168,10 @@ then obtain administrator review. AI is required for the full MVP acceptance cri
 The earlier next-task notes below are historical. Curriculum resource management
 and browsing are implemented; resource browser completion was developer-reported
 on 2026-10-19. Teacher drafts are now implemented; draft browser/rendered checks
-remain pending. Next feature work is submission completeness/workflows (milestone 3);
-infrastructure preparation may proceed alongside it.
+remain pending. Backend submission/review/resubmission is now implemented; see
+[workflow verification and frontend handoff](lesson-review.md). Workflow frontend
+and approved-library browsing/copying remain milestone 3 work; infrastructure
+preparation may proceed alongside it.
 
 At the end of each session, record:
 

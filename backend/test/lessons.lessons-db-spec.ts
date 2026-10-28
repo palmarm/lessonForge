@@ -1,9 +1,12 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { Prisma, type PrismaClient } from '../src/generated/prisma/client.js';
 import { createDatabaseClient } from '../src/prisma/prisma.service.js';
 import { LessonsService } from '../src/lessons/lessons.service.js';
+import { LessonWorkflowService } from '../src/lessons/lesson-workflow.service.js';
+import { completeContent } from './support/submission-content.js';
 import { ResourcesService } from '../src/resources/resources.service.js';
 import { resourceInput } from '../src/resources/resources.input.js';
 import { resolveConstraintDatabaseUrl } from './support/constraint-database.js';
@@ -509,3 +512,728 @@ it('rolls back actual content/source writes, version and timestamps on a post-wr
     expect(await competitor.detail(teacher, created.id)).toEqual(created);
   }
 });
+
+// These tests use real lifecycle services, not fixture lifecycle transitions.
+const workflow = () => new LessonWorkflowService(db);
+const competingWorkflow = () => new LessonWorkflowService(other);
+async function prepared() {
+  let created = await lessons.create(teacher, structuredClone(completeContent));
+  for (let i = 0; i < 2; i++) {
+    const source = await resource();
+    created = await lessons.mutate(teacher, created.id, created.version, {
+      action: 'select',
+      resourceId: source.id,
+    });
+  }
+  return created;
+}
+function allRows(id: string) {
+  return db.lesson.findUniqueOrThrow({
+    where: { id },
+    include: {
+      revisions: {
+        orderBy: { number: 'asc' },
+        include: { sources: { orderBy: { resourceId: 'asc' } }, review: true },
+      },
+    },
+  });
+}
+function gateClient() {
+  let release!: () => void;
+  let ready!: (pid: number) => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const locked = new Promise<number>((resolve) => {
+    ready = resolve;
+  });
+  const client = {
+    $transaction: (
+      run: (tx: Prisma.TransactionClient) => Promise<unknown>,
+      options: object,
+    ) =>
+      db.$transaction(async (tx) => {
+        const wrapped = new Proxy(tx, {
+          get(target, key) {
+            if (key !== '$queryRaw') return Reflect.get(target, key);
+            return async (...args: unknown[]) => {
+              const value = await Reflect.apply(target.$queryRaw, target, args);
+              const sql = args[0] as TemplateStringsArray;
+              if (Array.isArray(sql) && sql.join('').includes('FOR UPDATE')) {
+                const [{ pid }] = await tx.$queryRaw<
+                  { pid: number }[]
+                >`SELECT pg_backend_pid() AS pid`;
+                ready(pid!);
+                await gate;
+              }
+              return value;
+            };
+          },
+        });
+        return run(wrapped);
+      }, options),
+  } as unknown as PrismaClient;
+  return { client, locked, release };
+}
+async function observedRace(
+  holder: (client: PrismaClient) => Promise<unknown>,
+  waiter: () => Promise<unknown>,
+) {
+  const gate = gateClient();
+  const holding = holder(gate.client);
+  let pending: Promise<PromiseSettledResult<unknown>[]> | undefined;
+  try {
+    const pid = await Promise.race([
+      gate.locked,
+      holding.then(() => {
+        throw new Error('Holder did not reach the lock gate.');
+      }),
+    ]);
+    let settled = false;
+    pending = Promise.allSettled([waiter()]).finally(() => {
+      settled = true;
+    });
+    const deadline = Date.now() + 3000;
+    let waiting = false;
+    while (Date.now() < deadline) {
+      const rows = await other.$queryRaw<{ waiting: boolean }[]>`
+        SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'
+            AND ${pid} = ANY(pg_blocking_pids(pid))
+            AND query LIKE '%FROM "Lesson"%FOR UPDATE%'
+        ) AS waiting
+      `;
+      if (rows[0]?.waiting) {
+        waiting = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(waiting).toBe(true);
+    expect(settled).toBe(false);
+  } finally {
+    gate.release();
+    await Promise.allSettled([holding, ...(pending ? [pending] : [])]);
+  }
+  const winner = await holding;
+  const [loser] = await pending!;
+  expect(loser!.status).toBe('rejected');
+  if (loser!.status !== 'rejected')
+    throw new Error('Waiting mutation won unexpectedly.');
+  expect(loser!.reason).toMatchObject({ status: 409 });
+  return winner;
+}
+
+it('validates persisted completeness and sources without changing any draft/history row', async () => {
+  const incomplete = await draft();
+  const completeWithoutSources = await lessons.create(teacher, completeContent);
+  for (const saved of [incomplete, completeWithoutSources]) {
+    const before = await allRows(saved.id);
+    await expect(
+      workflow().submit(teacher, saved.id, saved.version),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(await allRows(saved.id)).toEqual(before);
+  }
+});
+
+it('authorizes before conflict disclosure and restricts submitted history and pending queries', async () => {
+  const saved = await prepared();
+  for (const version of [saved.version, 999]) {
+    await expect(
+      workflow().submit(foreign, saved.id, version),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      workflow().submit(admin, saved.id, version),
+    ).rejects.toMatchObject({ status: 403 });
+  }
+  await expect(workflow().history(admin, saved.id, 20)).rejects.toMatchObject({
+    status: 404,
+  });
+  await expect(workflow().history(foreign, saved.id, 20)).rejects.toMatchObject(
+    { status: 404 },
+  );
+  await expect(workflow().pending(teacher, 20)).rejects.toMatchObject({
+    status: 403,
+  });
+  expect((await workflow().history(teacher, saved.id, 20)).items).toEqual([]);
+  const submitted = await workflow().submit(teacher, saved.id, saved.version);
+  await expect(
+    workflow().review(teacher, saved.id, submitted.revision.id, {
+      expectedVersion: 999,
+      decision: 'APPROVE',
+    }),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(
+    workflow().detail(foreign, saved.id, submitted.revision.id),
+  ).rejects.toMatchObject({ status: 404 });
+  const detail = await workflow().detail(
+    admin,
+    saved.id,
+    submitted.revision.id,
+  );
+  expect(Object.keys(detail).sort()).toEqual(['revision', 'workflow']);
+  expect(Object.keys(detail.workflow).sort()).toEqual([
+    'currentRevisionId',
+    'lessonId',
+    'state',
+    'version',
+  ]);
+  expect(Object.keys(detail.revision).sort()).toEqual([
+    'content',
+    'generationOrigin',
+    'id',
+    'number',
+    'review',
+    'sources',
+    'submittedAt',
+  ]);
+  expect(detail.revision.content).toEqual(saved.content);
+});
+
+it('observes a submission waiting behind a real save and preserves the save winner', async () => {
+  const saved = await prepared();
+  await observedRace(
+    (client) =>
+      new LessonsService(client).mutate(teacher, saved.id, saved.version, {
+        content: { ...completeContent, title: 'Save winner' },
+      }),
+    () => competingWorkflow().submit(teacher, saved.id, saved.version),
+  );
+  const rows = await allRows(saved.id);
+  expect(rows.revisions).toEqual([]);
+  expect(rows.version).toBe(saved.version + 1);
+  expect((rows.draftContent as { title: string }).title).toBe('Save winner');
+});
+
+it.each(['save', 'select', 'remove', 'refresh', 'submit'] as const)(
+  'observes %s waiting behind actual submission and preserves the complete committed result',
+  async (action) => {
+    const saved = await prepared();
+    const extra = await resource();
+    const winner = (await observedRace(
+      (client) =>
+        new LessonWorkflowService(client).submit(
+          teacher,
+          saved.id,
+          saved.version,
+        ),
+      () =>
+        action === 'submit'
+          ? competingWorkflow().submit(teacher, saved.id, saved.version)
+          : competitor.mutate(
+              teacher,
+              saved.id,
+              saved.version,
+              action === 'save'
+                ? { content: { title: 'Discard' } }
+                : {
+                    action,
+                    resourceId:
+                      action === 'select'
+                        ? extra.id
+                        : saved.sources[0]!.resourceId,
+                  },
+            ),
+    )) as Awaited<ReturnType<LessonWorkflowService['submit']>>;
+    const rows = await allRows(saved.id);
+    expect(rows.version).toBe(saved.version + 1);
+    expect(rows.draftContent).toBeNull();
+    expect(rows.draftGenerationOrigin).toBeNull();
+    expect(rows.currentRevisionId).toBe(winner.revision.id);
+    expect(rows.revisions).toHaveLength(1);
+    expect(rows.revisions[0]!.content).toEqual(saved.content);
+    expect(winner.revision.sources).toEqual(
+      [...saved.sources].sort((a, b) =>
+        a.resourceId.localeCompare(b.resourceId),
+      ),
+    );
+    expect(
+      await competingWorkflow().detail(teacher, saved.id, winner.revision.id),
+    ).toEqual(winner);
+    for (const version of [saved.version, winner.workflow.version])
+      await expect(
+        workflow().submit(teacher, saved.id, version),
+      ).rejects.toMatchObject({ status: 409 });
+    expect(await allRows(saved.id)).toEqual(rows);
+  },
+);
+
+it.each([
+  ['APPROVE', 'REQUEST_CHANGES'],
+  ['REQUEST_CHANGES', 'APPROVE'],
+  ['APPROVE', 'APPROVE'],
+  ['REQUEST_CHANGES', 'REQUEST_CHANGES'],
+] as const)(
+  'observes competing %s / %s decisions and commits one immutable winner',
+  async (first, second) => {
+    const saved = await prepared();
+    const submitted = await workflow().submit(teacher, saved.id, saved.version);
+    const originalRevision = (await allRows(saved.id)).revisions[0]!;
+    const secondAdmin = {
+      id: (
+        await db.user.create({
+          data: {
+            email: `reviewer-${saved.id}@example.test`,
+            displayName: 'Other reviewer',
+            passwordHash: 'fixture',
+            role: 'ADMIN',
+          },
+        })
+      ).id,
+      role: 'ADMIN' as const,
+    };
+    await observedRace(
+      (client) =>
+        new LessonWorkflowService(client).review(
+          admin,
+          saved.id,
+          submitted.revision.id,
+          {
+            expectedVersion: submitted.workflow.version,
+            decision: first,
+            feedback: 'Winner feedback',
+          },
+        ),
+      () =>
+        competingWorkflow().review(
+          secondAdmin,
+          saved.id,
+          submitted.revision.id,
+          {
+            expectedVersion: submitted.workflow.version,
+            decision: second,
+            feedback: 'Loser feedback',
+          },
+        ),
+    );
+    const rows = await allRows(saved.id);
+    expect(rows.revisions).toHaveLength(1);
+    expect(rows.revisions[0]!.review).toMatchObject({
+      reviewerId: admin.id,
+      decision: first,
+      feedback: 'Winner feedback',
+    });
+    expect(rows.version).toBe(submitted.workflow.version + 1);
+    expect(rows.currentRevisionId).toBe(submitted.revision.id);
+    expect({ ...rows.revisions[0], review: null }).toEqual(originalRevision);
+    if (first === 'APPROVE') {
+      expect(rows.draftContent).toBeNull();
+      await expect(
+        lessons.mutate(teacher, saved.id, rows.version, { content: {} }),
+      ).rejects.toMatchObject({ status: 409 });
+    } else {
+      const restored = await lessons.detail(teacher, saved.id);
+      expect(restored.content).toEqual(saved.content);
+      expect(restored.generationOrigin).toBe(saved.generationOrigin);
+      expect(restored.sources).toEqual(submitted.revision.sources);
+    }
+    for (const version of [submitted.workflow.version, rows.version])
+      await expect(
+        workflow().review(admin, saved.id, submitted.revision.id, {
+          expectedVersion: version,
+          decision: first,
+          feedback: 'Repeat',
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+    expect(await allRows(saved.id)).toEqual(rows);
+  },
+);
+
+type FailureStage =
+  'revision' | 'partialSources' | 'sources' | 'review' | 'lesson';
+function failAfterWrite(stage: FailureStage) {
+  let wrote = false;
+  const stages = {
+    revision: ['lessonRevision', 'create'],
+    partialSources: ['revisionSource', 'createMany'],
+    sources: ['revisionSource', 'createMany'],
+    review: ['review', 'create'],
+    lesson: ['lesson', 'updateMany'],
+  };
+  const [modelName, methodName] = stages[stage]!;
+  const client = {
+    $transaction: (
+      run: (tx: Prisma.TransactionClient) => Promise<unknown>,
+      options: object,
+    ) =>
+      db.$transaction(async (tx) => {
+        const wrapped = new Proxy(tx, {
+          get(target, key) {
+            const model = Reflect.get(target, key);
+            if (key !== modelName) return model;
+            return new Proxy(model as object, {
+              get(delegate, method) {
+                const original = Reflect.get(delegate, method);
+                if (method !== methodName) return original;
+                return async (...args: unknown[]) => {
+                  if (stage === 'partialSources') {
+                    const input = args[0] as { data: object[] };
+                    args[0] = { ...input, data: input.data.slice(0, 1) };
+                  }
+                  await Reflect.apply(
+                    original as (...input: unknown[]) => unknown,
+                    delegate,
+                    args,
+                  );
+                  wrote = true;
+                  throw new Error('Injected after actual write');
+                };
+              },
+            });
+          },
+        });
+        return run(wrapped);
+      }, options),
+  } as unknown as PrismaClient;
+  return { service: new LessonWorkflowService(client), wrote: () => wrote };
+}
+
+it.each(['revision', 'partialSources', 'sources', 'lesson'] as const)(
+  'rolls back submission after actual %s writes, including timestamps and all sources',
+  async (stage) => {
+    const saved = await prepared();
+    const before = await allRows(saved.id);
+    const failing = failAfterWrite(stage);
+    await expect(
+      failing.service.submit(teacher, saved.id, saved.version),
+    ).rejects.toThrow('Injected after actual write');
+    expect(failing.wrote()).toBe(true);
+    expect(await allRows(saved.id)).toEqual(before);
+  },
+);
+
+it.each(['APPROVE', 'REQUEST_CHANGES'] as const)(
+  'rolls back %s after actual review and lesson writes',
+  async (decision) => {
+    const saved = await prepared();
+    const submitted = await workflow().submit(teacher, saved.id, saved.version);
+    const before = await allRows(saved.id);
+    for (const stage of ['review', 'lesson'] as const) {
+      const failing = failAfterWrite(stage);
+      await expect(
+        failing.service.review(admin, saved.id, submitted.revision.id, {
+          expectedVersion: submitted.workflow.version,
+          decision,
+          feedback: 'Feedback',
+        }),
+      ).rejects.toThrow('Injected after actual write');
+      expect(failing.wrote()).toBe(true);
+      expect(await allRows(saved.id)).toEqual(before);
+    }
+  },
+);
+
+it('preserves full historical rows, retired snapshots, origin and provenance through feedback, refresh, resubmission and approval', async () => {
+  const saved = await prepared();
+  // Server-controlled provenance fixture, never accepted from a client save.
+  await db.lesson.update({
+    where: { id: saved.id },
+    data: { draftGenerationOrigin: 'AI_ASSISTED' },
+  });
+  const selected = saved.sources[0]!;
+  await resources.mutate(
+    'ADMIN',
+    selected.resourceId,
+    selected.resourceVersion,
+    { ...content, contentText: 'Changed after selection.' },
+  );
+  const retired = saved.sources[1]!;
+  await resources.mutate('ADMIN', retired.resourceId, retired.resourceVersion);
+  const first = await workflow().submit(teacher, saved.id, saved.version);
+  expect(first.revision.generationOrigin).toBe('AI_ASSISTED');
+  expect(first.revision.sources).toEqual(
+    [...saved.sources].sort((a, b) => a.resourceId.localeCompare(b.resourceId)),
+  );
+  const rejected = await workflow().review(admin, saved.id, first.revision.id, {
+    expectedVersion: first.workflow.version,
+    decision: 'REQUEST_CHANGES',
+    feedback: '  Explain equal parts.  ',
+  });
+  expect(rejected.revision.review?.feedback).toBe('Explain equal parts.');
+  const historical = (await allRows(saved.id)).revisions[0]!;
+  let editable = await lessons.detail(teacher, saved.id);
+  expect(editable.sources).toEqual(first.revision.sources);
+  expect(editable.generationOrigin).toBe('AI_ASSISTED');
+  editable = await lessons.mutate(teacher, saved.id, editable.version, {
+    action: 'refresh',
+    resourceId: selected.resourceId,
+  });
+  editable = await lessons.mutate(teacher, saved.id, editable.version, {
+    content: { ...completeContent, title: 'Revised equal parts' },
+  });
+  expect((await allRows(saved.id)).revisions[0]).toEqual(historical);
+  const second = await workflow().submit(teacher, saved.id, editable.version);
+  expect(second.revision.number).toBe(2);
+  expect(second.revision.generationOrigin).toBe('AI_ASSISTED');
+  expect(
+    second.revision.sources.find((s) => s.resourceId === selected.resourceId)
+      ?.resourceVersion,
+  ).toBe(selected.resourceVersion + 1);
+  expect(
+    second.revision.sources.find((s) => s.resourceId === retired.resourceId),
+  ).toEqual(retired);
+  // Supplying a fresh version must not permit reviewing an older revision.
+  await expect(
+    workflow().review(admin, saved.id, first.revision.id, {
+      expectedVersion: second.workflow.version,
+      decision: 'APPROVE',
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  const secondBefore = (await allRows(saved.id)).revisions[1]!;
+  const approved = await workflow().review(
+    admin,
+    saved.id,
+    second.revision.id,
+    {
+      expectedVersion: second.workflow.version,
+      decision: 'APPROVE',
+      feedback: '  ',
+    },
+  );
+  expect(approved.revision.review?.feedback).toBeNull();
+  expect(approved.workflow.state).toBe('APPROVED');
+  const final = await allRows(saved.id);
+  expect(final.revisions[0]).toEqual(historical);
+  expect({ ...final.revisions[1], review: null }).toEqual(secondBefore);
+  expect(final.ownerId).toBe(teacher.id);
+  expect(final.copiedFromRevisionId).toBeNull();
+  expect(final.draftContent).toBeNull();
+  expect(final.draftGenerationOrigin).toBeNull();
+  expect(final.currentRevisionId).toBe(second.revision.id);
+  // Lost first-submission response: exact history remains readable after later review/resubmission.
+  const recovered = await workflow().detail(
+    teacher,
+    saved.id,
+    first.revision.id,
+  );
+  expect(recovered.revision.content).toEqual(first.revision.content);
+  expect(recovered.revision.sources).toEqual(first.revision.sources);
+  expect(recovered.revision.review).toEqual(rejected.revision.review);
+  expect(recovered.workflow).toEqual(approved.workflow);
+  const history = await workflow().history(admin, saved.id, 1);
+  const page2 = await workflow().history(
+    admin,
+    saved.id,
+    1,
+    history.nextAfter!,
+  );
+  expect(page2.nextAfter).toBeNull();
+  expect([...history.items, ...page2.items].map((r) => r.id)).toEqual(
+    [first.revision.id, second.revision.id].sort(),
+  );
+  expect(history.items[0]).not.toHaveProperty('content');
+  expect(history.items[0]).not.toHaveProperty('sources');
+  expect(
+    (await workflow().pending(admin, 50)).items.some(
+      (item) => item.workflow.lessonId === saved.id,
+    ),
+  ).toBe(false);
+  expect(await allRows(saved.id)).toEqual(final);
+});
+
+it.each(['history', 'detail', 'pending'] as const)(
+  'keeps %s multi-query reads in one read-only repeatable snapshot during review and resubmission',
+  async (operation) => {
+    const saved = await prepared();
+    const submitted = await workflow().submit(teacher, saved.id, saved.version);
+    let reached!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let paused = false;
+    const client = {
+      $transaction: (
+        run: (tx: Prisma.TransactionClient) => Promise<unknown>,
+        options: object,
+      ) =>
+        db.$transaction(async (tx) => {
+          const wrapped = new Proxy(tx, {
+            get(target, key) {
+              const model = Reflect.get(target, key);
+              if (key !== 'lesson') return model;
+              return new Proxy(model as object, {
+                get(delegate, method) {
+                  const original = Reflect.get(delegate, method);
+                  if (
+                    method !==
+                    (operation === 'pending' ? 'findMany' : 'findFirst')
+                  )
+                    return original;
+                  return async (...args: unknown[]) => {
+                    const value = await Reflect.apply(
+                      original as (...input: unknown[]) => unknown,
+                      delegate,
+                      args,
+                    );
+                    if (!paused) {
+                      paused = true;
+                      const flags = await tx.$queryRaw<
+                        { readOnly: string; isolation: string }[]
+                      >`SELECT current_setting('transaction_read_only') AS "readOnly", current_setting('transaction_isolation') AS isolation`;
+                      expect(flags[0]?.readOnly).toBe('on');
+                      expect(flags[0]?.isolation).toBe('repeatable read');
+                      reached();
+                      await gate;
+                    }
+                    return value;
+                  };
+                },
+              });
+            },
+          });
+          return run(wrapped);
+        }, options),
+    } as unknown as PrismaClient;
+    const reader = new LessonWorkflowService(client);
+    const reading =
+      operation === 'history'
+        ? reader.history(admin, saved.id, 50)
+        : operation === 'detail'
+          ? reader.detail(admin, saved.id, submitted.revision.id)
+          : reader.pending(admin, 50);
+    let newer: Awaited<ReturnType<LessonWorkflowService['submit']>> | undefined;
+    try {
+      await Promise.race([
+        ready,
+        reading.then(() => {
+          throw new Error('Read did not pause.');
+        }),
+      ]);
+      const requested = await competingWorkflow().review(
+        admin,
+        saved.id,
+        submitted.revision.id,
+        {
+          expectedVersion: submitted.workflow.version,
+          decision: 'REQUEST_CHANGES',
+          feedback: 'Explain.',
+        },
+      );
+      const edited = await competitor.mutate(
+        teacher,
+        saved.id,
+        requested.workflow.version,
+        { content: { ...completeContent, title: 'Later revision' } },
+      );
+      newer = await competingWorkflow().submit(
+        teacher,
+        saved.id,
+        edited.version,
+      );
+    } finally {
+      release();
+      await Promise.allSettled([reading]);
+    }
+    const result = await reading;
+    if ('workflow' in result)
+      expect(result.workflow).toEqual(submitted.workflow);
+    if ('revision' in result)
+      expect(result.revision).toEqual(submitted.revision);
+    if ('items' in result && 'workflow' in result) {
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        id: submitted.revision.id,
+        review: null,
+      });
+    }
+    if ('items' in result && !('workflow' in result)) {
+      expect(
+        result.items.find((item) => item.workflow.lessonId === saved.id),
+      ).toEqual({
+        workflow: submitted.workflow,
+        revision: {
+          id: submitted.revision.id,
+          number: 1,
+          title: completeContent.title,
+          generationOrigin: 'MANUAL',
+          submittedAt: submitted.revision.submittedAt,
+          review: null,
+        },
+      });
+    }
+    expect(
+      (await workflow().detail(admin, saved.id, submitted.revision.id))
+        .workflow,
+    ).toEqual(newer!.workflow);
+  },
+);
+
+it('paginates pending lessons by exclusive lesson UUID and excludes drafts and reviewed current revisions', async () => {
+  const all = await workflow().pending(admin, 50);
+  const ids = all.items.map((item) => item.workflow.lessonId);
+  expect(ids.length).toBeGreaterThan(1);
+  expect(ids).toEqual([...ids].sort());
+  const seen: string[] = [];
+  let after: string | undefined;
+  do {
+    const page = await workflow().pending(admin, 1, after);
+    for (const item of page.items) {
+      expect(item.workflow.state).toBe('SUBMITTED');
+      expect(item.revision.review).toBeNull();
+      expect(item.revision).not.toHaveProperty('content');
+      seen.push(item.workflow.lessonId);
+    }
+    after = page.nextAfter ?? undefined;
+  } while (after);
+  expect(seen).toEqual(ids);
+  const unknownCursor = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+  expect((await workflow().pending(admin, 1, unknownCursor)).items).toEqual([]);
+});
+
+it.each(['SUBMITTED', 'APPROVED', 'CHANGES_REQUESTED'] as const)(
+  'returns 404 without any writes for unknown/cross-lesson review targets at fresh/stale versions in %s',
+  async (state) => {
+    const saved = await prepared();
+    const otherSaved = await prepared();
+    const submitted = await workflow().submit(teacher, saved.id, saved.version);
+    const cross = await workflow().submit(
+      teacher,
+      otherSaved.id,
+      otherSaved.version,
+    );
+    let version = submitted.workflow.version;
+    if (state !== 'SUBMITTED') {
+      const decided = await workflow().review(
+        admin,
+        saved.id,
+        submitted.revision.id,
+        {
+          expectedVersion: version,
+          decision: state === 'APPROVED' ? 'APPROVE' : 'REQUEST_CHANGES',
+          feedback: 'Retained review feedback.',
+        },
+      );
+      version = decided.workflow.version;
+    }
+    const before = await allRows(saved.id);
+    const otherBefore = await allRows(otherSaved.id);
+    for (const revisionId of [randomUUID(), cross.revision.id]) {
+      for (const expectedVersion of [version, version - 1]) {
+        await expect(
+          workflow().review(admin, saved.id, revisionId, {
+            expectedVersion,
+            decision: 'APPROVE',
+          }),
+        ).rejects.toMatchObject({ status: 404 });
+        expect(await allRows(saved.id)).toEqual(before);
+        expect(await allRows(otherSaved.id)).toEqual(otherBefore);
+      }
+    }
+    // Membership succeeds for the exact same-lesson revision: conflicts stay 409.
+    for (const expectedVersion of state === 'SUBMITTED'
+      ? [version - 1]
+      : [version, version - 1]) {
+      await expect(
+        workflow().review(admin, saved.id, submitted.revision.id, {
+          expectedVersion,
+          decision: 'APPROVE',
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(await allRows(saved.id)).toEqual(before);
+    }
+  },
+);

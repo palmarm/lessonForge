@@ -13,7 +13,9 @@ is recorded separately. Curriculum resource management/browsing is implemented i
 [resource contracts](curriculum-resources.md). Teacher draft creation/list/detail,
 owned/version-checked saving, trusted resource selection/removal and explicit
 refresh are implemented without schema changes; see [draft contracts](teacher-drafts.md).
-Seeding, submission validation and submission/review/library/copy services remain pending. The
+Backend submission completeness, submission/review/resubmission, authorized history
+and pending-review services are implemented; see [workflow contracts](lesson-review.md).
+Seeding, workflow frontend, library browsing/copying and AI remain pending. The
 [project specification](project-specification.md) is authoritative, particularly
 sections 2–8. The [architecture](architecture.md) assigns authorization,
 validation, and transactions to NestJS. The [roadmap](roadmap.md) places the manual
@@ -428,7 +430,8 @@ remains for this initial design. Exact resource text is seed preparation work;
 session storage, password hashing, and authentication payload bounds are now
 resolved in [authentication design](authentication-design.md). Draft payload bounds
 are documented in [draft contracts](teacher-drafts.md#draft-structure-and-bounds);
-submission completeness validation remains pending. Prisma models and the reviewed initial
+submission completeness is implemented in [workflow validation](lesson-review.md).
+Prisma models and the reviewed initial
 migration SQL are implemented; the developer confirmed application to the
 development database on 2026-10-09. Future schema changes require new migrations.
 
@@ -488,7 +491,9 @@ the [verification guide](domain-schema-verification.md). These results do not
 establish authentication by themselves; separate
 [authentication verification](authentication-verification.md) records that work.
 Draft APIs and transaction-time editable-state/version checks are implemented.
-Submission/review/library/copy lifecycle services and draft browser checks remain pending.
+Submission/review/resubmission services are now implemented;
+see [workflow contracts and verification](lesson-review.md). Library browsing/copying
+and draft browser checks remain pending.
 
 ## Acceptance examples for implementation
 
@@ -517,5 +522,7 @@ Submission/review/library/copy lifecycle services and draft browser checks remai
 
 The initial design was a documentation-only task. Subsequent model/migration
 verification is recorded separately, including real PostgreSQL constraint tests.
-The lifecycle, authorization, full lesson-content, and AI acceptance examples
-still describe future service behavior, not completed application features.
+Lifecycle, authorization and submission-content examples now have backend service
+coverage; see [workflow verification](lesson-review.md#verification). Copy/library
+and AI examples remain future behavior, and workflow frontend/browser checks are
+separate pending work.

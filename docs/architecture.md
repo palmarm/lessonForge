@@ -26,8 +26,10 @@ authentication and API-outage recovery are developer-confirmed; remaining browse
 management/browsing is implemented; see [resource contracts](curriculum-resources.md).
 Teacher drafts and resource selection/snapshot preservation/refresh are implemented;
 see [draft contracts and verification](teacher-drafts.md). Resource browser completion
-was developer-reported on 2026-10-19. Resource seeding, submission validation and
-submission/review/library/copy workflows remain pending; see
+was developer-reported on 2026-10-19. Backend submission/review/resubmission and
+immutable history/queue APIs are implemented; see
+[workflow contracts and verification](lesson-review.md). Resource
+seeding, submission/review frontend and library browsing/copying remain pending; see
 [domain verification](domain-schema-verification.md).
 
 ## 1. Technology choices
@@ -96,6 +98,14 @@ are retained. The frontend draft workspace reuses credentialed transport and
 requires explicit reconciliation/version adoption while preserving entered text.
 Unconfirmed auth pauses it and invalidates pending responses; confirmed identity
 changes clear it. See [contracts and limits](teacher-drafts.md).
+
+The same module now adds submission, immutable revision/source capture, administrator
+decisions, requested-change draft restoration, resubmission, authorized history and
+pending-review queries. Every mutation takes the lesson lock before reading state;
+all writes and its version increment commit together. All new multi-query reads use
+bounded read-only REPEATABLE READ transactions so Prisma relation reads and current
+workflow metadata share one snapshot. Responses never expose editable drafts to
+administrators. See [exact envelopes and reconciliation](lesson-review.md).
 
 Organize the backend into feature modules:
 authentication, users, resources, lessons, reviews, and AI.
@@ -179,7 +189,7 @@ Basic browser authentication and API-outage recovery are developer-confirmed.
 Cookie, CORS/CSRF, HTTPS, component-rendering, and accessibility checks remain
 pending as automated/deployed evidence. Transaction-time ownership and editable
 lifecycle checks are implemented for drafts; submission/review workflow services
-remain pending. See
+are now implemented separately with the same lesson-first locking. See
 [frontend verification](frontend-authentication-verification.md),
 [design](authentication-design.md) and
 [verification](authentication-verification.md).
@@ -215,8 +225,9 @@ Deployment must account for cookie settings, HTTPS, CSRF protection, and the rel
 The [domain schema design](domain-schema.md) separates proposed database constraints
 from NestJS validation and transactional concurrency rules. These mechanisms are
 implemented in models and initial migration SQL where applicable. Submission/review
-authorization, completeness/timing validation, lifecycle transitions, latest-revision
-checks and approved-copy services remain pending. Draft structural validation,
+authorization, completeness/timing validation, lifecycle transitions and latest-revision
+checks are implemented in the lessons workflow service; approved-copy services
+remain pending. Draft structural validation,
 ownership/lifecycle/version transactions and trusted draft snapshot handling are
 implemented in the lessons module.
 Immutable-row triggers do not prevent a later source-row INSERT; finalized source
