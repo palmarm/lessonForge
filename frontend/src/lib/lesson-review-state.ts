@@ -160,6 +160,33 @@ export function createReviewState(
   }
   const canRead = () => idle() && !state.confirmation;
   const canChangeTarget = () => canRead() && !state.uncertain;
+  const canSelectLesson = (lessonId: string) =>
+    alive &&
+    !paused &&
+    !state.confirmation &&
+    !state.uncertain &&
+    (!state.pending ||
+      (state.pending === "read" && state.lessonId !== lessonId));
+  const selectLesson = (lessonId: string) => {
+    if (state.lessonId === lessonId) return;
+    // A different lesson supersedes reads only. Invalidate before aborting so
+    // even transports that ignore cancellation cannot publish old data/errors.
+    generation++;
+    controller?.abort();
+    update({
+      lessonId,
+      history: null,
+      selected: null,
+      comments: "",
+      pending: null,
+      blocked: false,
+      compared: false,
+      recovered: false,
+      error: null,
+      notice: null,
+    });
+    releaseDraft();
+  };
   return {
     getSnapshot: () => state,
     subscribe: (listener: () => void) => {
@@ -213,26 +240,36 @@ export function createReviewState(
       }));
     },
     history: (lessonId: string, after?: string) => {
-      if (!canChangeTarget()) return Promise.resolve();
+      lessonId = lessonId.toLowerCase();
+      after = after?.toLowerCase();
+      if (!canSelectLesson(lessonId)) return Promise.resolve();
+      // Pagination is an action on the currently displayed lesson's page.
+      if (
+        after &&
+        (state.history?.workflow.lessonId !== lessonId ||
+          state.history.nextAfter !== after)
+      )
+        return Promise.resolve();
       const different = state.lessonId !== lessonId;
       if (different && state.comments) return Promise.resolve();
+      selectLesson(lessonId);
       return run(async (signal) => ({
         history: await api.history(lessonId, after, signal),
-        lessonId,
-        ...(different ? { selected: null } : {}),
       }));
     },
     detail: (lessonId: string, revisionId: string, discardComments = false) => {
-      if (!canChangeTarget()) return Promise.resolve();
+      lessonId = lessonId.toLowerCase();
+      revisionId = revisionId.toLowerCase();
+      if (!canSelectLesson(lessonId)) return Promise.resolve();
       const different =
         state.selected?.workflow.lessonId !== lessonId ||
         state.selected?.revision.id !== revisionId;
       if (different && state.comments && !discardComments)
         return Promise.resolve();
+      selectLesson(lessonId);
+      if (different) update({ selected: null, comments: "", blocked: false });
       return run(async (signal) => ({
         selected: await api.detail(lessonId, revisionId, signal),
-        lessonId,
-        ...(different ? { comments: "", blocked: false } : {}),
       }));
     },
     prepareSubmission: () => {

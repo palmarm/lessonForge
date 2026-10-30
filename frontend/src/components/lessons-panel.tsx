@@ -209,8 +209,96 @@ function LessonsWorkspace({
   const editing = !!form;
   const pathname = usePathname();
   const heading = useRef<HTMLHeadingElement>(null);
+  const editor = useRef<HTMLDivElement>(null);
+  const saveControls = useRef<HTMLDivElement>(null);
   const errorSummary = useRef<HTMLParagraphElement>(null);
   const previousEditing = useRef(false);
+  const clearFocusedTarget = useCallback((target: HTMLElement) => {
+    const container = editor.current;
+    const toolbar = saveControls.current;
+    if (!container || !toolbar || toolbar.contains(target)) return;
+    if (
+      toolbar.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_PRECEDING
+    )
+      return;
+    // Moving a pointer-focused action between pointerdown/up cancels its click.
+    // Keyboard actions and text controls still receive full focus clearance.
+    if (!target.matches("input, textarea, select, :focus-visible")) return;
+    const field = target.getBoundingClientRect();
+    const primary = [field];
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement
+    ) {
+      target.labels?.forEach((label) =>
+        primary.push(label.getBoundingClientRect()),
+      );
+    }
+    const bounds = [...primary];
+    for (const id of (target.getAttribute("aria-describedby") ?? "").split(
+      /\s+/,
+    )) {
+      const description = document.getElementById(id);
+      // Shared guidance remains an accessible description, but may precede
+      // many rows. Moving this field cannot usefully reveal that distant hint.
+      if (description && !description.hasAttribute("data-draft-group-hint"))
+        bounds.push(description.getBoundingClientRect());
+    }
+    const top = Math.max(0, toolbar.getBoundingClientRect().bottom) + 8;
+    const bottom = window.innerHeight - 8;
+    const available = bottom - top;
+    if (available <= 0) return;
+    const span = (boxes: DOMRect[]) => ({
+      top: Math.min(...boxes.map((box) => box.top)),
+      bottom: Math.max(...boxes.map((box) => box.bottom)),
+    });
+    let region = span(bounds);
+    // If local guidance cannot fit, prioritize the label/control, then the
+    // control alone. Never chase impossible bounds on every focus/resize.
+    if (region.bottom - region.top > available) region = span(primary);
+    if (region.bottom - region.top > available) region = field;
+    let delta = 0;
+    if (region.bottom - region.top > available) {
+      if (region.bottom <= top) delta = region.bottom - bottom;
+      else if (region.top >= bottom) delta = region.top - top;
+      else return; // An oversized control already occupies the usable viewport.
+    } else if (region.top < top) delta = region.top - top;
+    else if (region.bottom > bottom) delta = region.bottom - bottom;
+    const scroller = document.scrollingElement;
+    if (!scroller) return;
+    const maximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    delta = Math.max(
+      -window.scrollY,
+      Math.min(delta, maximum - window.scrollY),
+    );
+    if (Math.abs(delta) > 0.5)
+      window.scrollBy({ top: delta, behavior: "instant" });
+  }, []);
+  useLayoutEffect(() => {
+    const container = editor.current;
+    const toolbar = saveControls.current;
+    if (!editing || !container || !toolbar) return;
+    // Wrapping actions and status messages change the sticky bar's height.
+    // Keep scroll/focus/fragment targets clear without a viewport-specific guess.
+    const measure = () => {
+      const height = toolbar.getBoundingClientRect().height;
+      container.style.setProperty("--draft-toolbar-height", `${height}px`);
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        container.contains(active) &&
+        !toolbar.contains(active) &&
+        toolbar.getBoundingClientRect().top <= 0
+      ) {
+        clearFocusedTarget(active);
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, [editing, clearFocusedTarget]);
   // UI-only row identities: never serialize these into lesson content.
   const [activityKeys, setActivityKeys] = useState<string[]>([]);
   const nextActivityKey = useRef(0);
@@ -280,7 +368,11 @@ function LessonsWorkspace({
     return (
       <fieldset className="min-w-0 space-y-3" aria-describedby={hintId}>
         <legend className="font-medium">{label}</legend>
-        <p id={hintId} className="text-sm text-neutral-600">
+        <p
+          id={hintId}
+          data-draft-group-hint
+          className="text-sm text-neutral-600"
+        >
           Optional. Up to {limit} entries, {maxLength.toLocaleString("en-US")}{" "}
           characters each. Line breaks and whitespace within each entry are
           kept.
@@ -293,6 +385,7 @@ function LessonsWorkspace({
         {items.map((value, index) => (
           <div
             key={index}
+            data-draft-array-item
             className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3"
           >
             <LabeledTextarea
@@ -482,7 +575,12 @@ function LessonsWorkspace({
           </div>
         )}
         {form && (
-          <div className="min-w-0 space-y-4">
+          <div
+            ref={editor}
+            data-draft-editor
+            className="min-w-0 space-y-4"
+            onFocusCapture={(event) => clearFocusedTarget(event.target)}
+          >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2
                 ref={heading}
@@ -505,6 +603,8 @@ function LessonsWorkspace({
               </button>
             </div>
             <div
+              ref={saveControls}
+              data-draft-save-controls
               role="region"
               aria-label="Draft save controls"
               className="sticky top-0 z-20 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border border-neutral-400 bg-white p-3 shadow-sm sm:p-4"
@@ -779,6 +879,7 @@ function LessonsWorkspace({
                   </div>
                   <p
                     id="lesson-context-hint"
+                    data-draft-group-hint
                     className="text-sm text-neutral-600"
                   >
                     Optional while drafting; Mathematics and Grade 4 are
@@ -846,6 +947,10 @@ function LessonsWorkspace({
                     >
                       Activities
                     </h3>
+                    <p className="text-sm text-neutral-600">
+                      Submission requires at least one activity with nonblank
+                      teacher and learner tasks and positive whole minutes.
+                    </p>
                     {(form.activities ?? []).map((activity, index) => {
                       const update = (patch: Partial<typeof activity>) =>
                         change({
@@ -980,10 +1085,7 @@ function LessonsWorkspace({
                 aria-labelledby="draft-sources-heading"
                 className="min-w-0 space-y-4 rounded-lg border border-neutral-300 bg-neutral-50 p-4 sm:p-6"
               >
-                <h3
-                  id="draft-sources-heading"
-                  className="section-title scroll-mt-40"
-                >
+                <h3 id="draft-sources-heading" className="section-title">
                   Selected resource snapshots (saved separately)
                 </h3>
                 <p>

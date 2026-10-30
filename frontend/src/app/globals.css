@@ -57,6 +57,20 @@
   fieldset:disabled textarea {
     opacity: 0.65;
   }
+  [data-draft-save-controls]
+    ~ *
+    :where(input, textarea, select, button, summary, [id], [tabindex]) {
+    /* Include space for the field label and focus ring above a scroll target. */
+    scroll-margin-top: calc(var(--draft-toolbar-height, 10rem) + 3rem);
+  }
+  [data-draft-save-controls]
+    ~ *
+    [data-draft-array-item]
+    :where(textarea, button) {
+    /* Local labels are measured on focus. Extra label space here makes native
+       Tab scrolling move rows that already clear the toolbar. */
+    scroll-margin-top: calc(var(--draft-toolbar-height, 10rem) + 8px);
+  }
 }
 
 @layer components {

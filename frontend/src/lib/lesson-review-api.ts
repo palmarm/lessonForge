@@ -256,7 +256,11 @@ export function createReviewApi(
           if (!record(v) || !exact(v, ["workflow", "items", "nextAfter"]))
             throw invalid();
           const w = workflow(v.workflow, id(lesson));
-          page(v, after, (item) => revision(item, false).id);
+          page(
+            v,
+            after ? id(after) : undefined,
+            (item) => revision(item, false).id,
+          );
           const items = (v.items as unknown[]).map((item) =>
             revision(item, false),
           );
@@ -299,7 +303,11 @@ export function createReviewApi(
               throw invalid();
             return { workflow: w, revision: rev };
           };
-          page(v, after, (value) => item(value).workflow.lessonId);
+          page(
+            v,
+            after ? id(after) : undefined,
+            (value) => item(value).workflow.lessonId,
+          );
           return {
             items: (v.items as unknown[]).map(item),
             nextAfter: v.nextAfter as string | null,

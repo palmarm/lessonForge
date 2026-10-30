@@ -302,8 +302,11 @@ export function WorkflowView({
     state.selected?.workflow.state === "SUBMITTED" &&
     state.selected.workflow.currentRevisionId === state.selected.revision.id &&
     !state.selected.revision.review;
+  const history =
+    state.history?.workflow.lessonId === state.lessonId ? state.history : null;
   const showResult =
     historyView ||
+    !!state.pending ||
     !!state.notice ||
     !!state.uncertain ||
     !!state.confirmation ||
@@ -440,16 +443,16 @@ export function WorkflowView({
             >
               Reload revision history
             </Button>
-            {state.history && (
+            {history && (
               <>
                 <p>
-                  Current state {state.history.workflow.state} · Version{" "}
-                  {state.history.workflow.version}. Viewing history never adopts
-                  this version into an editor. Pages follow revision UUID order;
+                  Current state {history.workflow.state} · Version{" "}
+                  {history.workflow.version}. Viewing history never adopts this
+                  version into an editor. Pages follow revision UUID order;
                   revision numbers show chronology.
                 </p>
                 <ul className="grid gap-3">
-                  {state.history.items.map((revision) => (
+                  {history.items.map((revision) => (
                     <li className="workspace-panel space-y-2" key={revision.id}>
                       <h3 className="font-semibold">
                         Revision {revision.number}: {revision.title}
@@ -460,23 +463,25 @@ export function WorkflowView({
                       </p>
                       <Button
                         disabled={locked}
-                        onClick={() => choose(state.lessonId!, revision.id)}
+                        onClick={() =>
+                          choose(history.workflow.lessonId, revision.id)
+                        }
                       >
                         Read revision {revision.number}
                       </Button>
                     </li>
                   ))}
                 </ul>
-                {!state.history.items.length && (
+                {!history.items.length && (
                   <p>No submitted revisions on this page.</p>
                 )}
-                {state.history.nextAfter && (
+                {history.nextAfter && (
                   <Button
                     disabled={locked}
                     onClick={() =>
                       void store.history(
-                        state.lessonId!,
-                        state.history!.nextAfter!,
+                        history.workflow.lessonId,
+                        history.nextAfter!,
                       )
                     }
                   >

@@ -3,7 +3,12 @@ import { before, after, test as nodeTest } from "node:test";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
-import { content as reviewContent, source as historicalSource, revisionId as submittedId, review as recordedReview } from "../support/review-fixture.mjs";
+import {
+  content as reviewContent,
+  source as historicalSource,
+  revisionId as submittedId,
+  review as recordedReview,
+} from "../support/review-fixture.mjs";
 
 // Optional runner: never downloads packages/browsers. Fixture responses exist only
 // in this browser harness; all application calls use its real transport and stores.
@@ -206,49 +211,137 @@ async function fixture(identity = teacher, fallback = false) {
         return { ...metadata, title: content.title };
       };
       if (method === "GET" && url.pathname === "/reviews/pending") {
-        const current = f.workflow.revisions.find((revision) => revision.id === f.workflow.current.currentRevisionId);
-        const value = f.queuePage ?? { items: current && !current.review ? [{ workflow: copy().current, revision: summary(structuredClone(current)) }] : [], nextAfter: null };
+        const current = f.workflow.revisions.find(
+          (revision) => revision.id === f.workflow.current.currentRevisionId,
+        );
+        const value = f.queuePage ?? {
+          items:
+            current && !current.review
+              ? [
+                  {
+                    workflow: copy().current,
+                    revision: summary(structuredClone(current)),
+                  },
+                ]
+              : [],
+          nextAfter: null,
+        };
         return respond(f.workflowReadStatus ?? 200, value);
       }
       if (method === "GET" && url.pathname === historyPath) {
         const current = copy();
-        const value = f.historyPage ?? { workflow: current.current, items: current.revisions.filter((revision) => !url.searchParams.get("after") || revision.id > url.searchParams.get("after")).sort((a, b) => a.id.localeCompare(b.id)).map(summary), nextAfter: null };
+        const value = f.historyPage ?? {
+          workflow: current.current,
+          items: current.revisions
+            .filter(
+              (revision) =>
+                !url.searchParams.get("after") ||
+                revision.id > url.searchParams.get("after"),
+            )
+            .sort((a, b) => a.id.localeCompare(b.id))
+            .map(summary),
+          nextAfter: null,
+        };
         f.workflowReadStarted?.resolve();
         if (f.workflowReadHold) await f.workflowReadHold.promise;
         return respond(f.workflowReadStatus ?? 200, value);
       }
       if (method === "GET" && url.pathname.startsWith(`${historyPath}/`)) {
         const current = copy();
-        const revision = current.revisions.find((r) => r.id === url.pathname.split("/").at(-1));
-        const value = f.workflowWrongDetail ?? { workflow: current.current, revision };
+        const revision = current.revisions.find(
+          (r) => r.id === url.pathname.split("/").at(-1),
+        );
+        const value = f.workflowWrongDetail ?? {
+          workflow: current.current,
+          revision,
+        };
         f.workflowReadStarted?.resolve();
         if (f.workflowReadHold) await f.workflowReadHold.promise;
         return respond(f.workflowReadStatus ?? (revision ? 200 : 404), value);
       }
-      if (method === "POST" && (url.pathname === `/lessons/${id}/submit` || url.pathname.endsWith("/review"))) {
+      if (
+        method === "POST" &&
+        (url.pathname === `/lessons/${id}/submit` ||
+          url.pathname.endsWith("/review"))
+      ) {
         const body = request.postDataJSON();
         if (f.workflowReject) return respond(f.workflowReject, {});
-        if (body.expectedVersion !== f.workflow.current.version) return respond(409, {});
+        if (body.expectedVersion !== f.workflow.current.version)
+          return respond(409, {});
         if (url.pathname.endsWith("/submit")) {
-          if (!["DRAFT", "CHANGES_REQUESTED"].includes(f.workflow.current.state)) return respond(409, {});
-          const revision = { id: f.submissionId ?? submittedId, number: f.workflow.revisions.length + 1, content: structuredClone(f.lesson.content), generationOrigin: f.lesson.generationOrigin, sources: structuredClone(f.lesson.sources).sort((a, b) => a.resourceId.localeCompare(b.resourceId)), submittedAt: lesson.updatedAt, review: null };
+          if (
+            !["DRAFT", "CHANGES_REQUESTED"].includes(f.workflow.current.state)
+          )
+            return respond(409, {});
+          const revision = {
+            id: f.submissionId ?? submittedId,
+            number: f.workflow.revisions.length + 1,
+            content: structuredClone(f.lesson.content),
+            generationOrigin: f.lesson.generationOrigin,
+            sources: structuredClone(f.lesson.sources).sort((a, b) =>
+              a.resourceId.localeCompare(b.resourceId),
+            ),
+            submittedAt: lesson.updatedAt,
+            review: null,
+          };
           f.workflow.revisions.push(revision);
-          f.workflow.current = { lessonId: id, version: body.expectedVersion + 1, state: "SUBMITTED", currentRevisionId: revision.id };
+          f.workflow.current = {
+            lessonId: id,
+            version: body.expectedVersion + 1,
+            state: "SUBMITTED",
+            currentRevisionId: revision.id,
+          };
         } else {
-          const revision = f.workflow.revisions.find((r) => r.id === url.pathname.split("/").at(-2));
+          const revision = f.workflow.revisions.find(
+            (r) => r.id === url.pathname.split("/").at(-2),
+          );
           if (!revision) return respond(404, {});
-          if (revision.review || f.workflow.current.currentRevisionId !== revision.id) return respond(409, {});
-          if (body.decision === "REQUEST_CHANGES" && !body.feedback.trim()) return respond(400, {});
-          revision.review = { ...recordedReview, reviewerId: f.identity.user.id, decision: body.decision, feedback: body.feedback.trim() || null };
-          f.workflow.current = { ...f.workflow.current, version: body.expectedVersion + 1, state: body.decision === "APPROVE" ? "APPROVED" : "CHANGES_REQUESTED" };
-          if (body.decision === "REQUEST_CHANGES") f.lesson = { ...f.lesson, content: structuredClone(revision.content), title: revision.content.title, sources: structuredClone(revision.sources), generationOrigin: revision.generationOrigin, version: f.workflow.current.version, state: "CHANGES_REQUESTED" };
+          if (
+            revision.review ||
+            f.workflow.current.currentRevisionId !== revision.id
+          )
+            return respond(409, {});
+          if (body.decision === "REQUEST_CHANGES" && !body.feedback.trim())
+            return respond(400, {});
+          revision.review = {
+            ...recordedReview,
+            reviewerId: f.identity.user.id,
+            decision: body.decision,
+            feedback: body.feedback.trim() || null,
+          };
+          f.workflow.current = {
+            ...f.workflow.current,
+            version: body.expectedVersion + 1,
+            state:
+              body.decision === "APPROVE" ? "APPROVED" : "CHANGES_REQUESTED",
+          };
+          if (body.decision === "REQUEST_CHANGES")
+            f.lesson = {
+              ...f.lesson,
+              content: structuredClone(revision.content),
+              title: revision.content.title,
+              sources: structuredClone(revision.sources),
+              generationOrigin: revision.generationOrigin,
+              version: f.workflow.current.version,
+              state: "CHANGES_REQUESTED",
+            };
         }
-        const result = { workflow: copy().current, revision: copy().revisions.find((r) => r.id === f.workflow.current.currentRevisionId) };
+        const result = {
+          workflow: copy().current,
+          revision: copy().revisions.find(
+            (r) => r.id === f.workflow.current.currentRevisionId,
+          ),
+        };
         f.workflowWriteStarted?.resolve();
         if (f.workflowWriteHold) await f.workflowWriteHold.promise;
         return respond(f.workflowWriteStatus ?? 201, result);
       }
-      if (method === "GET" && url.pathname === `/lessons/${id}` && ["SUBMITTED", "APPROVED"].includes(f.workflow.current.state)) return respond(409, {});
+      if (
+        method === "GET" &&
+        url.pathname === `/lessons/${id}` &&
+        ["SUBMITTED", "APPROVED"].includes(f.workflow.current.state)
+      )
+        return respond(409, {});
     }
     if (method === "GET") {
       if (url.pathname === "/lessons") {
@@ -257,7 +350,14 @@ async function fixture(identity = teacher, fallback = false) {
         void sources;
         void generationOrigin;
         const result = structuredClone(
-          f.lessonPage ?? { items: f.workflow && ["SUBMITTED", "APPROVED"].includes(f.workflow.current.state) ? [] : [summary], nextAfter: null },
+          f.lessonPage ?? {
+            items:
+              f.workflow &&
+              ["SUBMITTED", "APPROVED"].includes(f.workflow.current.state)
+                ? []
+                : [summary],
+            nextAfter: null,
+          },
         );
         const status = f.listStatus ?? 200;
         f.listStarted?.resolve();
@@ -1971,6 +2071,7 @@ test("Phase 3 handoff: responsive writing and snapshots retain separate versione
         .boundingBox();
       assert.ok(
         titleBox && saveBar && titleBox.y >= saveBar.y + saveBar.height,
+        JSON.stringify({ width, titleBox, saveBar }),
       );
       assert.equal(
         await p.evaluate(
@@ -1981,13 +2082,53 @@ test("Phase 3 handoff: responsive writing and snapshots retain separate versione
       await p.screenshot({
         path: `/tmp/lessonforge-phase3-handoff-writing-${width}.png`,
       });
+      const titleId = await titleField.getAttribute("id");
+      await assertDraftClearance(p, p.locator(`label[for="${titleId}"]`));
+      await assertDraftClearance(
+        p,
+        p.locator(
+          `[id="${await titleField.getAttribute("aria-describedby")}"]`,
+        ),
+      );
+      const minutes = p.getByLabel("Total duration (minutes)", { exact: true });
+      await minutes.fill("1441");
+      await save.click();
+      assert.equal(await minutes.getAttribute("aria-invalid"), "true");
+      assert.equal(
+        await minutes.evaluate((node) => node === document.activeElement),
+        true,
+      );
+      await assertDraftClearance(p, minutes);
+      for (const description of (
+        await minutes.getAttribute("aria-describedby")
+      ).split(/\s+/)) {
+        await assertDraftClearance(p, p.locator(`[id="${description}"]`));
+      }
+      await minutes.fill("");
+      const help = p.getByText("Draft help and limits", { exact: true });
+      if ((await help.locator("..").getAttribute("open")) === null)
+        await help.click();
+      await p
+        .getByRole("link", { name: "Edit introduction", exact: true })
+        .click();
+      await assertDraftClearance(
+        p,
+        p.getByLabel("Lesson introduction (editable)", { exact: true }),
+      );
+      await p
+        .getByRole("link", {
+          name: "Select or manage resource snapshots",
+          exact: true,
+        })
+        .click();
+      await assertDraftClearance(p, p.locator("#draft-sources-heading"));
       await sources
         .getByRole("heading", {
           name: "Saved resource · Selected version 1",
           exact: true,
         })
         .evaluate((el) => {
-          window.scrollBy({ top: el.getBoundingClientRect().top - 160 });
+          el.scrollIntoView({ block: "start" });
         });
       const bar = await p
         .getByRole("region", { name: "Draft save controls", exact: true })
@@ -2728,60 +2869,148 @@ test("Phase 3 corrections: D2 paused return read never reports a confirmed empty
 
 async function workflowFixture(role = "TEACHER", fallback = false) {
   const f = await fixture(role === "ADMIN" ? admin : teacher, fallback);
-  f.lesson = { ...f.lesson, content: structuredClone(reviewContent), title: reviewContent.title, sources: [structuredClone(historicalSource)] };
-  f.workflow = { current: { lessonId: id, version: 1, state: "DRAFT", currentRevisionId: null }, revisions: [] };
+  f.lesson = {
+    ...f.lesson,
+    content: structuredClone(reviewContent),
+    title: reviewContent.title,
+    sources: [structuredClone(historicalSource)],
+  };
+  f.workflow = {
+    current: {
+      lessonId: id,
+      version: 1,
+      state: "DRAFT",
+      currentRevisionId: null,
+    },
+    revisions: [],
+  };
   if (role === "ADMIN") {
-    f.workflow.current = { lessonId: id, version: 2, state: "SUBMITTED", currentRevisionId: submittedId };
-    f.workflow.revisions = [{ id: submittedId, number: 1, content: structuredClone(reviewContent), sources: [structuredClone(historicalSource)], generationOrigin: "MANUAL", submittedAt: lesson.updatedAt, review: null }];
+    f.workflow.current = {
+      lessonId: id,
+      version: 2,
+      state: "SUBMITTED",
+      currentRevisionId: submittedId,
+    };
+    f.workflow.revisions = [
+      {
+        id: submittedId,
+        number: 1,
+        content: structuredClone(reviewContent),
+        sources: [structuredClone(historicalSource)],
+        generationOrigin: "MANUAL",
+        submittedAt: lesson.updatedAt,
+        review: null,
+      },
+    ];
   }
   return f;
 }
 async function prepareTeacher(f) {
   await f.goto("/drafts");
-  await f.page.getByRole("button", { name: /Open draft: Fractions lesson/ }).click();
-  await f.page.getByRole("button", { name: "Prepare submission", exact: true }).click();
-  await f.page.getByRole("heading", { name: "Confirm submission", exact: true }).waitFor();
+  await f.page
+    .getByRole("button", { name: /Open draft: Fractions lesson/ })
+    .click();
+  await f.page
+    .getByRole("button", { name: "Prepare submission", exact: true })
+    .click();
+  await f.page
+    .getByRole("heading", { name: "Confirm submission", exact: true })
+    .waitFor();
 }
 async function inspectAdmin(f) {
   await f.goto("/admin/reviews");
-  await f.page.getByRole("button", { name: "Reload pending queue", exact: true }).click();
-  await f.page.getByRole("button", { name: "Inspect submitted revision 1", exact: true }).click();
-  await f.page.getByRole("article", { name: "Immutable revision 1", exact: true }).waitFor();
+  await f.page
+    .getByRole("button", { name: "Reload pending queue", exact: true })
+    .click();
+  await f.page
+    .getByRole("button", { name: "Inspect submitted revision 1", exact: true })
+    .click();
+  await f.page
+    .getByRole("article", { name: "Immutable revision 1", exact: true })
+    .waitFor();
 }
-const workflowPosts = (f) => f.calls.filter((call) => call.method === "POST" && /\/(submit|review)$/.test(call.path));
+const workflowPosts = (f) =>
+  f.calls.filter(
+    (call) => call.method === "POST" && /\/(submit|review)$/.test(call.path),
+  );
 
 test("Lesson review: teacher confirmation, duplicate clicks and pending navigation preserve saved-only submission", async () => {
   const f = await workflowFixture("TEACHER", true);
   try {
     const p = f.page;
     await f.goto("/drafts");
-    await p.getByRole("button", { name: /Open draft: Fractions lesson/ }).click();
+    await p
+      .getByRole("button", { name: /Open draft: Fractions lesson/ })
+      .click();
     await p.getByLabel("Title", { exact: true }).fill("Unsaved candidate");
-    assert.equal(await p.getByRole("button", { name: "Prepare submission", exact: true }).isDisabled(), true);
-    await p.getByRole("button", { name: "Save draft content", exact: true }).click();
+    assert.equal(
+      await p
+        .getByRole("button", { name: "Prepare submission", exact: true })
+        .isDisabled(),
+      true,
+    );
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
     await p.getByText("Saved version 2.", { exact: true }).waitFor();
     f.workflow.current.version = 2;
-    await p.getByRole("button", { name: "Prepare submission", exact: true }).click();
-    await p.getByRole("heading", { name: "Confirm submission", exact: true }).waitFor();
+    await p
+      .getByRole("button", { name: "Prepare submission", exact: true })
+      .click();
+    await p
+      .getByRole("heading", { name: "Confirm submission", exact: true })
+      .waitFor();
     assert.equal(workflowPosts(f).length, 0);
-    await p.getByRole("button", { name: "Cancel confirmation", exact: true }).click();
-    assert.equal(await p.getByLabel("Title", { exact: true }).inputValue(), "Unsaved candidate");
-    await p.getByRole("button", { name: "Prepare submission", exact: true }).click();
+    await p
+      .getByRole("button", { name: "Cancel confirmation", exact: true })
+      .click();
+    assert.equal(
+      await p.getByLabel("Title", { exact: true }).inputValue(),
+      "Unsaved candidate",
+    );
+    await p
+      .getByRole("button", { name: "Prepare submission", exact: true })
+      .click();
     f.workflowWriteHold = deferred();
     f.workflowWriteStarted = deferred();
-    await p.getByRole("button", { name: "Confirm submit saved revision", exact: true }).evaluate((node) => { node.click(); node.click(); });
+    await p
+      .getByRole("button", {
+        name: "Confirm submit saved revision",
+        exact: true,
+      })
+      .evaluate((node) => {
+        node.click();
+        node.click();
+      });
     await f.workflowWriteStarted.promise;
     assert.equal(workflowPosts(f).length, 1);
     assert.deepEqual(workflowPosts(f)[0].body, { expectedVersion: 2 });
     await nav(p, "Resources").click();
     await p.locator("[data-navigation-notice]").waitFor();
     assert.equal(new URL(p.url()).pathname, "/drafts");
-    assert.equal(await p.getByRole("button", { name: "Save draft content", exact: true }).isDisabled(), true);
+    assert.equal(
+      await p
+        .getByRole("button", { name: "Save draft content", exact: true })
+        .isDisabled(),
+      true,
+    );
     f.workflowWriteHold.resolve();
-    await p.getByRole("article", { name: "Immutable revision 1", exact: true }).waitFor();
-    assert.equal(await p.getByLabel("Title", { exact: true }).isVisible(), false);
-    assert.match(await p.getByRole("article", { name: "Immutable revision 1" }).innerText(), /Unsaved candidate/);
-  } finally { await f.close(); }
+    await p
+      .getByRole("article", { name: "Immutable revision 1", exact: true })
+      .waitFor();
+    assert.equal(
+      await p.getByLabel("Title", { exact: true }).isVisible(),
+      false,
+    );
+    assert.match(
+      await p
+        .getByRole("article", { name: "Immutable revision 1" })
+        .innerText(),
+      /Unsaved candidate/,
+    );
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: backend validation retains the editable draft and field guidance without inventing field errors", async () => {
@@ -2789,62 +3018,191 @@ test("Lesson review: backend validation retains the editable draft and field gui
   try {
     await prepareTeacher(f);
     f.workflowReject = 400;
-    await f.page.getByRole("button", { name: "Confirm submit saved revision", exact: true }).click();
-    await f.page.getByRole("alert").filter({ hasText: /backend rejected validation/ }).waitFor();
-    assert.equal(await f.page.getByLabel("Title", { exact: true }).inputValue(), reviewContent.title);
-    assert.equal(await f.page.getByRole("button", { name: "Save draft content", exact: true }).isEnabled(), true);
+    await f.page
+      .getByRole("button", {
+        name: "Confirm submit saved revision",
+        exact: true,
+      })
+      .click();
+    await f.page
+      .getByRole("alert")
+      .filter({ hasText: /backend rejected validation/ })
+      .waitFor();
+    assert.equal(
+      await f.page.getByLabel("Title", { exact: true }).inputValue(),
+      reviewContent.title,
+    );
+    assert.equal(
+      await f.page
+        .getByRole("button", { name: "Save draft content", exact: true })
+        .isEnabled(),
+      true,
+    );
     assert.equal(f.workflow.revisions.length, 0);
-    assert.equal(await f.page.getByRole("heading", { name: "Write outcome uncertain", exact: true }).count(), 0);
-    assert.match(await f.page.locator("label[for]").filter({ hasText: "Title" }).locator("..").innerText(), /required for submission/);
-  } finally { await f.close(); }
+    assert.equal(
+      await f.page
+        .getByRole("heading", { name: "Write outcome uncertain", exact: true })
+        .count(),
+      0,
+    );
+    const title = f.page.getByLabel("Title", { exact: true });
+    const hintId = await title.getAttribute("aria-describedby");
+    assert.ok(hintId, "Title must reference its submission guidance");
+    const hint = f.page.locator(`[id="${hintId}"]`);
+    assert.equal(await hint.isVisible(), true);
+    assert.match(await hint.innerText(), /required for submission/);
+    assert.equal(await title.getAttribute("aria-invalid"), null);
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: lost submission finds its immutable first revision after later feedback/resubmission and rejects failed reconciliation", async () => {
   const f = await workflowFixture();
   try {
     const p = f.page;
-    await prepareTeacher(f); f.workflowWriteStatus = 503;
-    await p.getByRole("button", { name: "Confirm submit saved revision", exact: true }).click();
-    await p.getByRole("heading", { name: "Write outcome uncertain", exact: true }).waitFor();
+    await prepareTeacher(f);
+    f.workflowWriteStatus = 503;
+    await p
+      .getByRole("button", {
+        name: "Confirm submit saved revision",
+        exact: true,
+      })
+      .click();
+    await p
+      .getByRole("heading", { name: "Write outcome uncertain", exact: true })
+      .waitFor();
     f.workflowReadStatus = 503;
-    await p.getByRole("button", { name: "Recover exact outcome", exact: true }).click();
-    await p.getByRole("alert").filter({ hasText: /temporarily unavailable/ }).waitFor();
-    assert.equal(await p.getByRole("button", { name: "Acknowledge recorded outcome", exact: true }).count(), 0);
+    await p
+      .getByRole("button", { name: "Recover exact outcome", exact: true })
+      .click();
+    await p
+      .getByRole("alert")
+      .filter({ hasText: /temporarily unavailable/ })
+      .waitFor();
+    assert.equal(
+      await p
+        .getByRole("button", {
+          name: "Acknowledge recorded outcome",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
     const first = f.workflow.revisions[0];
-    first.review = { ...recordedReview, decision: "REQUEST_CHANGES", feedback: "Explain historical halves." };
-    f.workflow.revisions.push({ ...structuredClone(first), id: "99999999-9999-4999-8999-999999999999", number: 2, content: { ...reviewContent, title: "Later editable draft" }, sources: [{ ...structuredClone(historicalSource), resourceVersion: 2, snapshot: { ...historicalSource.snapshot, contentText: "Later current resource text." } }], review: null });
-    f.workflow.current = { lessonId: id, version: 8, state: "SUBMITTED", currentRevisionId: f.workflow.revisions[1].id };
+    first.review = {
+      ...recordedReview,
+      decision: "REQUEST_CHANGES",
+      feedback: "Explain historical halves.",
+    };
+    f.workflow.revisions.push({
+      ...structuredClone(first),
+      id: "99999999-9999-4999-8999-999999999999",
+      number: 2,
+      content: { ...reviewContent, title: "Later editable draft" },
+      sources: [
+        {
+          ...structuredClone(historicalSource),
+          resourceVersion: 2,
+          snapshot: {
+            ...historicalSource.snapshot,
+            contentText: "Later current resource text.",
+          },
+        },
+      ],
+      review: null,
+    });
+    f.workflow.current = {
+      lessonId: id,
+      version: 8,
+      state: "SUBMITTED",
+      currentRevisionId: f.workflow.revisions[1].id,
+    };
     f.workflowReadStatus = 200;
-    await p.getByRole("button", { name: "Recover exact outcome", exact: true }).click();
-    const article = p.getByRole("article", { name: "Immutable revision 1", exact: true });
+    await p
+      .getByRole("button", { name: "Recover exact outcome", exact: true })
+      .click();
+    const article = p.getByRole("article", {
+      name: "Immutable revision 1",
+      exact: true,
+    });
     await article.waitFor();
     assert.match(await article.innerText(), /Explain historical halves/);
-    await article.getByText("Read historical resource text", { exact: true }).click();
+    await article
+      .getByText("Read historical resource text", { exact: true })
+      .click();
     assert.match(await article.innerText(), /Historical equal parts text/);
-    assert.doesNotMatch(await article.innerText(), /Later current resource text|Later editable draft/);
+    assert.doesNotMatch(
+      await article.innerText(),
+      /Later current resource text|Later editable draft/,
+    );
     await nav(p, "Resources").click();
     assert.equal(new URL(p.url()).pathname, "/drafts");
-    await p.getByRole("button", { name: "Acknowledge recorded outcome", exact: true }).click();
-    await p.getByRole("link", { name: "Open this lesson history", exact: true }).click();
-    await p.getByRole("heading", { name: "Lesson revision history", exact: true }).waitFor();
+    await p
+      .getByRole("button", {
+        name: "Acknowledge recorded outcome",
+        exact: true,
+      })
+      .click();
+    await p
+      .getByRole("link", { name: "Open this lesson history", exact: true })
+      .click();
+    await p
+      .getByRole("heading", { name: "Lesson revision history", exact: true })
+      .waitFor();
     assert.equal(workflowPosts(f).length, 1);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: absent submission results stay uncertain without retry or acknowledgement", async () => {
   const f = await workflowFixture();
   try {
-    await prepareTeacher(f); f.workflowReject = 503;
-    await f.page.getByRole("button", { name: "Confirm submit saved revision", exact: true }).click();
-    await f.page.getByRole("heading", { name: "Write outcome uncertain", exact: true }).waitFor();
-    await f.page.getByRole("button", { name: "Recover exact outcome", exact: true }).click();
-    await f.page.getByRole("status").filter({ hasText: /absence does not prove failure/ }).waitFor();
-    assert.equal(await f.page.getByRole("button", { name: "Acknowledge recorded outcome", exact: true }).count(), 0);
-    assert.equal(await f.page.getByRole("button", { name: "Prepare submission", exact: true }).isDisabled(), true);
-    await account(f.page).getByRole("button", { name: "Sign out", exact: true }).click();
-    assert.equal(f.calls.some((call) => call.path === "/auth/logout"), false);
+    await prepareTeacher(f);
+    f.workflowReject = 503;
+    await f.page
+      .getByRole("button", {
+        name: "Confirm submit saved revision",
+        exact: true,
+      })
+      .click();
+    await f.page
+      .getByRole("heading", { name: "Write outcome uncertain", exact: true })
+      .waitFor();
+    await f.page
+      .getByRole("button", { name: "Recover exact outcome", exact: true })
+      .click();
+    await f.page
+      .getByRole("status")
+      .filter({ hasText: /absence does not prove failure/ })
+      .waitFor();
+    assert.equal(
+      await f.page
+        .getByRole("button", {
+          name: "Acknowledge recorded outcome",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    assert.equal(
+      await f.page
+        .getByRole("button", { name: "Prepare submission", exact: true })
+        .isDisabled(),
+      true,
+    );
+    await account(f.page)
+      .getByRole("button", { name: "Sign out", exact: true })
+      .click();
+    assert.equal(
+      f.calls.some((call) => call.path === "/auth/logout"),
+      false,
+    );
     assert.equal(workflowPosts(f).length, 1);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: direct teacher history is read-only and shows historical sources despite later draft/resource edits", async () => {
@@ -2854,55 +3212,113 @@ test("Lesson review: direct teacher history is read-only and shows historical so
     f.resource.contentText = "Current resource replacement";
     f.lesson.content.title = "Current editable replacement";
     await f.goto(`/history/${id}`);
-    await f.page.getByRole("button", { name: "Read revision 1", exact: true }).click();
-    const article = f.page.getByRole("article", { name: "Immutable revision 1", exact: true });
+    await f.page
+      .getByRole("button", { name: "Read revision 1", exact: true })
+      .click();
+    const article = f.page.getByRole("article", {
+      name: "Immutable revision 1",
+      exact: true,
+    });
     await article.waitFor();
-    await article.getByText("Read historical resource text", { exact: true }).click();
+    await article
+      .getByText("Read historical resource text", { exact: true })
+      .click();
     assert.match(await article.innerText(), /Historical equal parts text/);
-    assert.doesNotMatch(await article.innerText(), /Current resource replacement|Current editable replacement/);
+    assert.doesNotMatch(
+      await article.innerText(),
+      /Current resource replacement|Current editable replacement/,
+    );
     assert.equal(await article.locator("textarea,input").count(), 0);
-    assert.equal(await f.page.getByRole("button", { name: "Approve exact revision", exact: true }).count(), 0);
+    assert.equal(
+      await f.page
+        .getByRole("button", { name: "Approve exact revision", exact: true })
+        .count(),
+      0,
+    );
     assert.equal(workflowPosts(f).length, 0);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: administrator approval confirms exact revision/version and records optional comments", async () => {
   const f = await workflowFixture("ADMIN");
   try {
     await inspectAdmin(f);
-    await f.page.getByLabel("Review comments", { exact: true }).fill("  Approved after inspection.  ");
-    await f.page.getByRole("button", { name: "Approve exact revision", exact: true }).click();
-    const confirmation = f.page.getByRole("region", { name: "Workflow confirmation", exact: true });
+    await f.page
+      .getByLabel("Review comments", { exact: true })
+      .fill("  Approved after inspection.  ");
+    await f.page
+      .getByRole("button", { name: "Approve exact revision", exact: true })
+      .click();
+    const confirmation = f.page.getByRole("region", {
+      name: "Workflow confirmation",
+      exact: true,
+    });
     await confirmation.waitFor();
     assert.match(await confirmation.innerText(), new RegExp(submittedId));
     assert.match(await confirmation.innerText(), /Expected lesson version 2/);
     assert.equal(workflowPosts(f).length, 0);
-    await confirmation.getByRole("button", { name: "Confirm record decision", exact: true }).click();
+    await confirmation
+      .getByRole("button", { name: "Confirm record decision", exact: true })
+      .click();
     await f.page.getByText("Approved", { exact: true }).waitFor();
-    assert.deepEqual(workflowPosts(f)[0].body, { expectedVersion: 2, decision: "APPROVE", feedback: "  Approved after inspection.  " });
-    assert.equal(workflowPosts(f)[0].path, `/lessons/${id}/revisions/${submittedId}/review`);
-    assert.equal(await f.page.getByRole("button", { name: "Approve exact revision", exact: true }).isDisabled(), true);
-  } finally { await f.close(); }
+    assert.deepEqual(workflowPosts(f)[0].body, {
+      expectedVersion: 2,
+      decision: "APPROVE",
+      feedback: "  Approved after inspection.  ",
+    });
+    assert.equal(
+      workflowPosts(f)[0].path,
+      `/lessons/${id}/revisions/${submittedId}/review`,
+    );
+    assert.equal(
+      await f.page
+        .getByRole("button", { name: "Approve exact revision", exact: true })
+        .isDisabled(),
+      true,
+    );
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: requested changes require field comments, preserve exact input and announce resulting status", async () => {
   const f = await workflowFixture("ADMIN");
   try {
     await inspectAdmin(f);
-    const p = f.page, comments = p.getByLabel("Review comments", { exact: true });
-    await p.getByRole("button", { name: "Request changes", exact: true }).click();
+    const p = f.page,
+      comments = p.getByLabel("Review comments", { exact: true });
+    await p
+      .getByRole("button", { name: "Request changes", exact: true })
+      .click();
     assert.equal(await comments.getAttribute("aria-invalid"), "true");
-    assert.equal(await comments.evaluate((node) => node === document.activeElement), true);
+    assert.equal(
+      await comments.evaluate((node) => node === document.activeElement),
+      true,
+    );
     assert.equal(workflowPosts(f).length, 0);
     await comments.fill("  Clarify teacher tasks.\nKeep original sources.  ");
-    await p.getByRole("button", { name: "Request changes", exact: true }).click();
-    await p.getByRole("button", { name: "Confirm record decision", exact: true }).evaluate((node) => { node.click(); node.click(); });
+    await p
+      .getByRole("button", { name: "Request changes", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "Confirm record decision", exact: true })
+      .evaluate((node) => {
+        node.click();
+        node.click();
+      });
     await p.getByText("Changes requested", { exact: true }).waitFor();
     assert.equal(workflowPosts(f).length, 1);
-    assert.equal(workflowPosts(f)[0].body.feedback, "  Clarify teacher tasks.\nKeep original sources.  ");
+    assert.equal(
+      workflowPosts(f)[0].body.feedback,
+      "  Clarify teacher tasks.\nKeep original sources.  ",
+    );
     assert.equal(f.workflow.current.state, "CHANGES_REQUESTED");
     assert.equal(await p.getByLabel("Title", { exact: true }).count(), 0);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: stale administrator version requires exact comparison and deliberate adoption before another confirmation", async () => {
@@ -2910,22 +3326,59 @@ test("Lesson review: stale administrator version requires exact comparison and d
   try {
     await inspectAdmin(f);
     const p = f.page;
-    await p.getByLabel("Review comments", { exact: true }).fill("Retained after conflict");
+    await p
+      .getByLabel("Review comments", { exact: true })
+      .fill("Retained after conflict");
     f.workflow.current.version = 3;
-    await p.getByRole("button", { name: "Approve exact revision", exact: true }).click();
-    await p.getByRole("button", { name: "Confirm record decision", exact: true }).click();
-    await p.getByRole("heading", { name: "Workflow conflict", exact: true }).waitFor();
-    assert.equal(await p.getByLabel("Review comments", { exact: true }).inputValue(), "Retained after conflict");
-    await p.getByRole("button", { name: "Recover exact outcome", exact: true }).click();
-    await p.getByRole("button", { name: "Accept displayed revision and version", exact: true }).waitFor();
-    assert.equal(await p.getByRole("button", { name: "Approve exact revision", exact: true }).isDisabled(), true);
+    await p
+      .getByRole("button", { name: "Approve exact revision", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "Confirm record decision", exact: true })
+      .click();
+    await p
+      .getByRole("heading", { name: "Workflow conflict", exact: true })
+      .waitFor();
+    assert.equal(
+      await p.getByLabel("Review comments", { exact: true }).inputValue(),
+      "Retained after conflict",
+    );
+    await p
+      .getByRole("button", { name: "Recover exact outcome", exact: true })
+      .click();
+    await p
+      .getByRole("button", {
+        name: "Accept displayed revision and version",
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(
+      await p
+        .getByRole("button", { name: "Approve exact revision", exact: true })
+        .isDisabled(),
+      true,
+    );
     assert.equal(workflowPosts(f).length, 1);
-    await p.getByRole("button", { name: "Accept displayed revision and version", exact: true }).click();
-    await p.getByRole("button", { name: "Approve exact revision", exact: true }).click();
-    await p.getByRole("button", { name: "Confirm record decision", exact: true }).click();
+    await p
+      .getByRole("button", {
+        name: "Accept displayed revision and version",
+        exact: true,
+      })
+      .click();
+    await p
+      .getByRole("button", { name: "Approve exact revision", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "Confirm record decision", exact: true })
+      .click();
     await p.getByText("Approved", { exact: true }).waitFor();
-    assert.deepEqual(workflowPosts(f).map((call) => call.body.expectedVersion), [2, 3]);
-  } finally { await f.close(); }
+    assert.deepEqual(
+      workflowPosts(f).map((call) => call.body.expectedVersion),
+      [2, 3],
+    );
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: uncertain review and competing winner retain comments and require explicit recovery acknowledgement", async () => {
@@ -2933,24 +3386,71 @@ test("Lesson review: uncertain review and competing winner retain comments and r
   try {
     await inspectAdmin(f);
     const p = f.page;
-    await p.getByLabel("Review comments", { exact: true }).fill("My original comment");
+    await p
+      .getByLabel("Review comments", { exact: true })
+      .fill("My original comment");
     f.workflowWriteStatus = 503;
-    await p.getByRole("button", { name: "Approve exact revision", exact: true }).click();
-    await p.getByRole("button", { name: "Confirm record decision", exact: true }).click();
-    await p.getByRole("heading", { name: "Write outcome uncertain", exact: true }).waitFor();
+    await p
+      .getByRole("button", { name: "Approve exact revision", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "Confirm record decision", exact: true })
+      .click();
+    await p
+      .getByRole("heading", { name: "Write outcome uncertain", exact: true })
+      .waitFor();
     f.workflowReadStatus = 503;
-    await p.getByRole("button", { name: "Recover exact outcome", exact: true }).click();
-    await p.getByRole("alert").filter({ hasText: /temporarily unavailable/ }).waitFor();
-    assert.equal(await p.getByRole("button", { name: "Acknowledge recorded outcome", exact: true }).count(), 0);
-    f.workflow.revisions[0].review = { ...recordedReview, reviewerId: "88888888-8888-4888-8888-888888888888", decision: "REQUEST_CHANGES", feedback: "Other administrator feedback" };
-    f.workflow.current.state = "CHANGES_REQUESTED"; f.workflowReadStatus = 200;
-    await p.getByRole("button", { name: "Recover exact outcome", exact: true }).click();
-    await p.getByRole("status").filter({ hasText: /competing decision/ }).waitFor();
-    assert.equal(await p.getByLabel("Review comments", { exact: true }).inputValue(), "My original comment");
-    await p.getByRole("button", { name: "Acknowledge recorded outcome", exact: true }).click();
-    assert.equal(await p.getByRole("button", { name: "Approve exact revision", exact: true }).isDisabled(), true);
+    await p
+      .getByRole("button", { name: "Recover exact outcome", exact: true })
+      .click();
+    await p
+      .getByRole("alert")
+      .filter({ hasText: /temporarily unavailable/ })
+      .waitFor();
+    assert.equal(
+      await p
+        .getByRole("button", {
+          name: "Acknowledge recorded outcome",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    f.workflow.revisions[0].review = {
+      ...recordedReview,
+      reviewerId: "88888888-8888-4888-8888-888888888888",
+      decision: "REQUEST_CHANGES",
+      feedback: "Other administrator feedback",
+    };
+    f.workflow.current.state = "CHANGES_REQUESTED";
+    f.workflowReadStatus = 200;
+    await p
+      .getByRole("button", { name: "Recover exact outcome", exact: true })
+      .click();
+    await p
+      .getByRole("status")
+      .filter({ hasText: /competing decision/ })
+      .waitFor();
+    assert.equal(
+      await p.getByLabel("Review comments", { exact: true }).inputValue(),
+      "My original comment",
+    );
+    await p
+      .getByRole("button", {
+        name: "Acknowledge recorded outcome",
+        exact: true,
+      })
+      .click();
+    assert.equal(
+      await p
+        .getByRole("button", { name: "Approve exact revision", exact: true })
+        .isDisabled(),
+      true,
+    );
     assert.equal(workflowPosts(f).length, 1);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: authentication pause invalidates a pending submission, then recovery and session replacement dispose it", async () => {
@@ -2958,55 +3458,482 @@ test("Lesson review: authentication pause invalidates a pending submission, then
   try {
     await prepareTeacher(f);
     const p = f.page;
-    f.workflowWriteHold = deferred(); f.workflowWriteStarted = deferred();
-    await p.getByRole("button", { name: "Confirm submit saved revision", exact: true }).click();
+    f.workflowWriteHold = deferred();
+    f.workflowWriteStarted = deferred();
+    await p
+      .getByRole("button", {
+        name: "Confirm submit saved revision",
+        exact: true,
+      })
+      .click();
     await f.workflowWriteStarted.promise;
     f.meStatus = 503;
-    await account(p).getByRole("button", { name: "Check session again", exact: true }).click();
-    await p.getByRole("status").filter({ hasText: /Workflow controls are paused/ }).waitFor();
+    await account(p)
+      .getByRole("button", { name: "Check session again", exact: true })
+      .click();
+    await p
+      .getByRole("status")
+      .filter({ hasText: /Workflow controls are paused/ })
+      .waitFor();
     f.workflowWriteHold.resolve();
-    assert.equal(await p.getByRole("article", { name: "Immutable revision 1", exact: true }).count(), 0);
+    assert.equal(
+      await p
+        .getByRole("article", { name: "Immutable revision 1", exact: true })
+        .count(),
+      0,
+    );
     f.meStatus = 200;
-    await account(p).getByRole("button", { name: "Check session again", exact: true }).click();
-    await p.getByRole("button", { name: "Recover exact outcome", exact: true }).click();
-    await p.getByRole("button", { name: "Acknowledge recorded outcome", exact: true }).click();
+    await account(p)
+      .getByRole("button", { name: "Check session again", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "Recover exact outcome", exact: true })
+      .click();
+    await p
+      .getByRole("button", {
+        name: "Acknowledge recorded outcome",
+        exact: true,
+      })
+      .click();
     f.identity = { ...teacher, expiresAt: "2030-01-02T08:00:00.000Z" };
-    await account(p).getByRole("button", { name: "Check session again", exact: true }).click();
-    await p.getByRole("heading", { name: "My lesson drafts", exact: true }).waitFor();
-    assert.equal(await p.getByRole("article", { name: "Immutable revision 1", exact: true }).count(), 0);
+    await account(p)
+      .getByRole("button", { name: "Check session again", exact: true })
+      .click();
+    await p
+      .getByRole("heading", { name: "My lesson drafts", exact: true })
+      .waitFor();
+    assert.equal(
+      await p
+        .getByRole("article", { name: "Immutable revision 1", exact: true })
+        .count(),
+      0,
+    );
     assert.equal(workflowPosts(f).length, 1);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: wrong-revision detail and permission failure cannot enable decisions or replace an exact target", async () => {
   const f = await workflowFixture("ADMIN");
   try {
     await f.goto("/admin/reviews");
-    await f.page.getByRole("button", { name: "Reload pending queue", exact: true }).click();
-    f.workflowWrongDetail = { workflow: f.workflow.current, revision: { ...f.workflow.revisions[0], id: "99999999-9999-4999-8999-999999999999" } };
-    await f.page.getByRole("button", { name: "Inspect submitted revision 1", exact: true }).click();
-    await f.page.getByRole("alert").filter({ hasText: /Unexpected workflow response/ }).waitFor();
-    assert.equal(await f.page.getByRole("button", { name: "Approve exact revision", exact: true }).count(), 0);
-    f.workflowWrongDetail = null; f.workflowReadStatus = 403;
-    await f.page.getByRole("button", { name: "Inspect submitted revision 1", exact: true }).click();
-    await f.page.getByRole("alert").filter({ hasText: /cannot perform that action/ }).waitFor();
-    assert.equal(await account(f.page).getByText("Test Administrator", { exact: true }).isVisible(), true);
+    await f.page
+      .getByRole("button", { name: "Reload pending queue", exact: true })
+      .click();
+    f.workflowWrongDetail = {
+      workflow: f.workflow.current,
+      revision: {
+        ...f.workflow.revisions[0],
+        id: "99999999-9999-4999-8999-999999999999",
+      },
+    };
+    await f.page
+      .getByRole("button", {
+        name: "Inspect submitted revision 1",
+        exact: true,
+      })
+      .click();
+    await f.page
+      .getByRole("alert")
+      .filter({ hasText: /Unexpected workflow response/ })
+      .waitFor();
+    assert.equal(
+      await f.page
+        .getByRole("button", { name: "Approve exact revision", exact: true })
+        .count(),
+      0,
+    );
+    f.workflowWrongDetail = null;
+    f.workflowReadStatus = 403;
+    await f.page
+      .getByRole("button", {
+        name: "Inspect submitted revision 1",
+        exact: true,
+      })
+      .click();
+    await f.page
+      .getByRole("alert")
+      .filter({ hasText: /cannot perform that action/ })
+      .waitFor();
+    assert.equal(
+      await account(f.page)
+        .getByText("Test Administrator", { exact: true })
+        .isVisible(),
+      true,
+    );
     assert.equal(workflowPosts(f).length, 0);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("Lesson review: comments retain navigation protection across resources and return", async () => {
   const f = await workflowFixture("ADMIN");
   try {
     await inspectAdmin(f);
-    await f.page.getByLabel("Review comments", { exact: true }).fill("Retained decision draft");
+    await f.page
+      .getByLabel("Review comments", { exact: true })
+      .fill("Retained decision draft");
     await dialog(f.page, false, () => nav(f.page, "Manage resources").click());
     assert.equal(new URL(f.page.url()).pathname, "/admin/reviews");
     await dialog(f.page, true, () => nav(f.page, "Manage resources").click());
     await nav(f.page, "Review submissions").click();
-    assert.equal(await f.page.getByLabel("Review comments", { exact: true }).inputValue(), "Retained decision draft");
+    assert.equal(
+      await f.page.getByLabel("Review comments", { exact: true }).inputValue(),
+      "Retained decision draft",
+    );
     assert.equal(workflowPosts(f).length, 0);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
+});
+
+// Assert the current design's visible outline on the element reached by Tab.
+// Contrast uses the computed colors, not a particular CSS color serialization.
+async function assertVisibleKeyboardFocus(target) {
+  const focus = await target.evaluate((node) => {
+    const style = getComputedStyle(node);
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    const rgba = (color) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return [...context.getImageData(0, 0, 1, 1).data];
+    };
+    let parent = node.parentElement;
+    while (parent && rgba(getComputedStyle(parent).backgroundColor)[3] === 0)
+      parent = parent.parentElement;
+    return {
+      active: node === document.activeElement,
+      visible: node.matches(":focus-visible"),
+      style: style.outlineStyle,
+      width: parseFloat(style.outlineWidth),
+      color: rgba(style.outlineColor),
+      background: rgba(style.backgroundColor),
+      surrounding: rgba(getComputedStyle(parent).backgroundColor),
+    };
+  });
+  assert.equal(focus.active, true, JSON.stringify(focus));
+  assert.equal(focus.visible, true, JSON.stringify(focus));
+  assert.ok(!["none", "hidden"].includes(focus.style), JSON.stringify(focus));
+  assert.ok(focus.width >= 2, JSON.stringify(focus));
+  const luminance = (color) => {
+    assert.equal(
+      color[3],
+      255,
+      "Focus treatment and comparison surface must be opaque",
+    );
+    const [r, g, b] = color.slice(0, 3).map((value) => {
+      const channel = value / 255;
+      return channel <= 0.04045
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const foreground = luminance(focus.color);
+  for (const surface of [focus.background, focus.surrounding]) {
+    const background = luminance(surface);
+    assert.ok(
+      (Math.max(foreground, background) + 0.05) /
+        (Math.min(foreground, background) + 0.05) >=
+        3,
+      JSON.stringify(focus),
+    );
+  }
+}
+async function tabTo(page, target) {
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press("Tab");
+    if (await target.evaluate((node) => node === document.activeElement))
+      return;
+  }
+  assert.fail("Expected action was not reachable within 40 Tab presses");
+}
+async function assertDraftClearance(page, target) {
+  const box = await target.boundingBox();
+  const toolbar = await page
+    .getByRole("region", { name: "Draft save controls", exact: true })
+    .boundingBox();
+  assert.ok(
+    box &&
+      toolbar &&
+      box.y >= toolbar.y + toolbar.height &&
+      box.y + box.height <= 900,
+    JSON.stringify({ box, toolbar }),
+  );
+}
+
+async function settleFocusLayout(page) {
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+}
+async function positionBelowToolbar(field, gap = 80) {
+  await field.evaluate((node, gap) => {
+    const toolbar = document.querySelector("[data-draft-save-controls]");
+    window.scrollBy(
+      0,
+      node.getBoundingClientRect().top -
+        toolbar.getBoundingClientRect().height -
+        gap,
+    );
+  }, gap);
+}
+async function assertNoFocusJump(page, action, evidence) {
+  const before = await page.evaluate(() => scrollY);
+  await action();
+  await settleFocusLayout(page);
+  const after = await page.evaluate(() => scrollY);
+  assert.ok(
+    Math.abs(before - after) <= 1,
+    JSON.stringify({ ...evidence, before, after }),
+  );
+}
+for (const width of [320, 1024]) {
+  for (const group of ["Learning objectives", "Materials"]) {
+    test(`C1 focus clearance: visible ${group} rows retain shared descriptions at ${width}px`, async () => {
+      const f = await fixture(teacher);
+      const p = f.page;
+      try {
+        f.lesson.content[
+          group === "Materials" ? "materials" : "learningObjectives"
+        ] = Array.from({ length: 8 }, (_, i) => `${group} entry ${i + 1}`);
+        await p.setViewportSize({ width, height: 900 });
+        await openLesson(f);
+        const first = p.getByLabel(`${group}, item 4`, { exact: true });
+        const next = p.getByLabel(`${group}, item 5`, { exact: true });
+        await first.focus();
+        await positionBelowToolbar(first, 140);
+        await settleFocusLayout(p);
+        const hintId = await next.getAttribute("aria-describedby");
+        const hint = p.locator(`[id="${hintId}"]`);
+        const toolbar = p.getByRole("region", {
+          name: "Draft save controls",
+          exact: true,
+        });
+        assert.ok(
+          (await hint.boundingBox()).y < (await toolbar.boundingBox()).height,
+        );
+        await assertDraftClearance(p, first);
+        await assertDraftClearance(p, next);
+        const firstId = await first.getAttribute("id");
+        await assertDraftClearance(p, p.locator(`label[for="${firstId}"]`));
+        await assertDraftClearance(
+          p,
+          p.getByRole("button", {
+            name: `Remove ${group.toLowerCase()} item 4`,
+            exact: true,
+          }),
+        );
+        await assertNoFocusJump(
+          p,
+          async () => {
+            await p.keyboard.press("Tab"); // Remove item 4
+            await p.keyboard.press("Tab"); // Item 5
+          },
+          { width, group, hint: await hint.boundingBox() },
+        );
+        assert.equal(
+          await next.evaluate((node) => node === document.activeElement),
+          true,
+        );
+        await assertNoFocusJump(
+          p,
+          async () => {
+            await p.keyboard.press("Shift+Tab");
+            await p.keyboard.press("Shift+Tab");
+          },
+          { width, group, direction: "back" },
+        );
+        assert.equal(
+          await first.evaluate((node) => node === document.activeElement),
+          true,
+        );
+        for (const item of [first, next]) {
+          assert.equal(await item.getAttribute("aria-describedby"), hintId);
+          assert.equal(
+            await item.evaluate((node) =>
+              node.closest("fieldset").getAttribute("aria-describedby"),
+            ),
+            hintId,
+          );
+        }
+        assert.match(await hint.textContent(), /Line breaks and whitespace/);
+        assert.equal(f.calls.filter((call) => call.method !== "GET").length, 0);
+      } finally {
+        await f.close();
+      }
+    });
+  }
+}
+test("C1 focus clearance: wrapped/resized toolbar reveals an active array row without subsequent jumps", async () => {
+  const f = await fixture(teacher);
+  const p = f.page;
+  try {
+    f.lesson.content.learningObjectives = Array.from(
+      { length: 8 },
+      (_, i) => `Objective ${i + 1}`,
+    );
+    await p.setViewportSize({ width: 1024, height: 900 });
+    await openLesson(f);
+    const row = p.getByLabel("Learning objectives, item 4", { exact: true });
+    await row.focus();
+    await positionBelowToolbar(row);
+    const wideHeight = await p
+      .locator("[data-draft-save-controls]")
+      .evaluate((node) => node.getBoundingClientRect().height);
+    for (const width of [320, 390, 768, 1440]) {
+      await p.setViewportSize({ width, height: 900 });
+      await settleFocusLayout(p);
+      await assertDraftClearance(p, row);
+      if (width === 320)
+        assert.ok(
+          (await p
+            .locator("[data-draft-save-controls]")
+            .evaluate((node) => node.getBoundingClientRect().height)) >
+            wideHeight,
+        );
+      await assertNoFocusJump(
+        p,
+        async () => {
+          await p.keyboard.press("Tab");
+          await p.keyboard.press("Shift+Tab");
+        },
+        { width, resized: true },
+      );
+      assert.equal(
+        await row.evaluate((node) => node === document.activeElement),
+        true,
+      );
+    }
+  } finally {
+    await f.close();
+  }
+});
+test("C1 focus clearance: a local invalid field and its error behind the mobile toolbar are revealed", async () => {
+  const f = await fixture(teacher);
+  const p = f.page;
+  try {
+    await p.setViewportSize({ width: 320, height: 720 });
+    await openLesson(f);
+    const field = p.getByLabel("Total duration (minutes)", { exact: true });
+    await field.fill("1441");
+    await p
+      .getByRole("button", { name: "Save draft content", exact: true })
+      .click();
+    assert.equal(await field.getAttribute("aria-invalid"), "true");
+    await p
+      .locator("[data-draft-save-controls] button")
+      .first()
+      .evaluate((node) => node.focus({ preventScroll: true }));
+    await positionBelowToolbar(field, -20);
+    await field.evaluate((node) => node.focus({ preventScroll: true }));
+    await settleFocusLayout(p);
+    const bounds = await field.evaluate((node) => {
+      const nodes = [
+        node,
+        ...node.labels,
+        ...node
+          .getAttribute("aria-describedby")
+          .split(/\s+/)
+          .map((id) => document.getElementById(id)),
+      ];
+      return {
+        top: Math.min(...nodes.map((item) => item.getBoundingClientRect().top)),
+        bottom: Math.max(
+          ...nodes.map((item) => item.getBoundingClientRect().bottom),
+        ),
+        toolbar: document
+          .querySelector("[data-draft-save-controls]")
+          .getBoundingClientRect().bottom,
+      };
+    });
+    assert.ok(
+      bounds.top >= bounds.toolbar + 7 && bounds.bottom <= 713,
+      JSON.stringify(bounds),
+    );
+    assert.equal(f.calls.filter((call) => call.method !== "GET").length, 0);
+  } finally {
+    await f.close();
+  }
+});
+test("C1 focus clearance: a wrapped label and resized local field fit together when feasible", async () => {
+  const f = await fixture(teacher);
+  const p = f.page;
+  try {
+    await p.setViewportSize({ width: 320, height: 900 });
+    await openLesson(f);
+    const field = p.getByLabel("Differentiation: extension activities", {
+      exact: true,
+    });
+    await field.evaluate((node) => {
+      node.style.height = "480px";
+    });
+    await positionBelowToolbar(field, 400);
+    await field.evaluate((node) => node.focus({ preventScroll: true }));
+    await settleFocusLayout(p);
+    const labelId = await field.getAttribute("id");
+    const label = p.locator(`label[for="${labelId}"]`);
+    assert.ok(
+      (await label.boundingBox()).height > 26,
+      "Exercise a genuinely wrapped label",
+    );
+    await assertDraftClearance(p, field);
+    await assertDraftClearance(p, label);
+    const hintId = await field.getAttribute("aria-describedby");
+    await assertDraftClearance(p, p.locator(`[id="${hintId}"]`));
+    await p
+      .locator("[data-draft-save-controls] button")
+      .first()
+      .evaluate((node) => node.focus({ preventScroll: true }));
+    await assertNoFocusJump(
+      p,
+      () => field.evaluate((node) => node.focus({ preventScroll: true })),
+      { localFits: true },
+    );
+  } finally {
+    await f.close();
+  }
+});
+test("C1 focus clearance: oversized local content stays stable instead of trying impossible bounds", async () => {
+  const f = await fixture(teacher);
+  const p = f.page;
+  try {
+    await p.setViewportSize({ width: 320, height: 720 });
+    await openLesson(f);
+    const field = p.getByLabel("Title", { exact: true });
+    await field.evaluate((node) => {
+      node.style.height = "1000px";
+    });
+    await positionBelowToolbar(field, 70);
+    const hintId = await field.getAttribute("aria-describedby");
+    assert.ok((await p.locator(`[id="${hintId}"]`).boundingBox()).y > 720);
+    for (let i = 0; i < 3; i++) {
+      await p
+        .locator("[data-draft-save-controls] button")
+        .first()
+        .evaluate((node) => node.focus({ preventScroll: true }));
+      await assertNoFocusJump(
+        p,
+        () => field.evaluate((node) => node.focus({ preventScroll: true })),
+        { oversized: true, iteration: i },
+      );
+    }
+    assert.equal(await field.getAttribute("aria-describedby"), hintId);
+    assert.match(
+      await p.locator(`[id="${hintId}"]`).textContent(),
+      /required for submission/,
+    );
+  } finally {
+    await f.close();
+  }
 });
 
 for (const width of [320, 390, 768, 1024, 1440]) {
@@ -3016,16 +3943,40 @@ for (const width of [320, 390, 768, 1024, 1440]) {
       const p = f.page;
       await p.setViewportSize({ width, height: 900 });
       await prepareTeacher(f);
-      const confirm = p.getByRole("button", { name: "Confirm submit saved revision", exact: true });
-      await confirm.focus();
-      assert.equal(await confirm.evaluate((node) => node === document.activeElement && getComputedStyle(node).outlineStyle !== "none"), true);
-      await p.screenshot({ path: `/tmp/lessonforge-review-teacher-confirm-${width}.png`, fullPage: true });
+      const confirm = p.getByRole("button", {
+        name: "Confirm submit saved revision",
+        exact: true,
+      });
+      // Preparation focuses the workflow heading. Reach the confirmation by
+      // actual keyboard navigation, rather than pointer-origin programmatic focus.
+      await tabTo(p, confirm);
+      await assertVisibleKeyboardFocus(confirm);
+      await p.screenshot({
+        path: `/tmp/lessonforge-review-teacher-confirm-${width}.png`,
+        fullPage: true,
+      });
       await p.keyboard.press("Enter");
-      await p.getByRole("article", { name: "Immutable revision 1", exact: true }).waitFor();
-      assert.ok((await p.getByRole("status").allTextContents()).some((text) => text.includes("submitted")));
-      assert.equal(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-      await p.screenshot({ path: `/tmp/lessonforge-review-history-${width}.png`, fullPage: true });
-    } finally { await f.close(); }
+      await p
+        .getByRole("article", { name: "Immutable revision 1", exact: true })
+        .waitFor();
+      assert.ok(
+        (await p.getByRole("status").allTextContents()).some((text) =>
+          text.includes("submitted"),
+        ),
+      );
+      assert.equal(
+        await p.evaluate(
+          () => document.documentElement.scrollWidth > innerWidth,
+        ),
+        false,
+      );
+      await p.screenshot({
+        path: `/tmp/lessonforge-review-history-${width}.png`,
+        fullPage: true,
+      });
+    } finally {
+      await f.close();
+    }
     const a = await workflowFixture("ADMIN");
     try {
       const p = a.page;
@@ -3034,9 +3985,21 @@ for (const width of [320, 390, 768, 1024, 1440]) {
       await p.getByLabel("Review comments", { exact: true }).focus();
       await p.keyboard.type("Keyboard review feedback");
       await p.keyboard.press("Tab");
-      assert.equal(await p.getByRole("button", { name: "Approve exact revision", exact: true }).evaluate((node) => node === document.activeElement), true);
-      assert.equal(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-      await p.screenshot({ path: `/tmp/lessonforge-review-admin-${width}.png`, fullPage: true });
-    } finally { await a.close(); }
+      await assertVisibleKeyboardFocus(
+        p.getByRole("button", { name: "Approve exact revision", exact: true }),
+      );
+      assert.equal(
+        await p.evaluate(
+          () => document.documentElement.scrollWidth > innerWidth,
+        ),
+        false,
+      );
+      await p.screenshot({
+        path: `/tmp/lessonforge-review-admin-${width}.png`,
+        fullPage: true,
+      });
+    } finally {
+      await a.close();
+    }
   });
 }

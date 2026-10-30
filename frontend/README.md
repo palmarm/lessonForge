@@ -1,9 +1,10 @@
 # LessonForge frontend
 
 Next.js with TypeScript and Tailwind CSS. `/sign-in` provides teacher/admin
-authentication. The shared layout shows teacher Resources/My drafts navigation
-and administrator Manage resources navigation. NestJS owns authentication and
-authorization. See [Phase 1 integration](../docs/ui/frontend-design-integration.md)
+authentication. The shared layout shows teacher Resources/My drafts/Revision
+history navigation and administrator Manage resources/Review submissions
+navigation. NestJS owns authentication and authorization. See
+[Phase 1 integration](../docs/ui/frontend-design-integration.md)
 for workspace ownership, navigation protection and verification.
 
 Copy `.env.example` to ignored `.env.local` if it does not already exist:
@@ -50,6 +51,9 @@ credentials or identity are persisted in browser storage. Role display does not
 grant permissions. Requests abort after a shared 15-second deadline covering
 headers and complete response reading. Timeouts offer retry/session reconciliation;
 login is never automatically retried and uncertain logout preserves identity.
-Submission/review/library workflows, AI, and hosting are deferred.
+Submission, immutable revision history and administrator decisions are documented
+in the [lesson review UI guide](../docs/ui/lesson-review.md), including recovery,
+contract gaps and a manual checklist. Library browsing/copying, AI, and hosting
+remain deferred.
 See the [CI guide](../docs/ci.md) for the implemented checks and pending workflow-run
 verification.
