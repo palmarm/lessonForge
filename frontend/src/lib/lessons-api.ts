@@ -77,7 +77,7 @@ function id(v: string) {
   if (!uuid.test(v)) throw new AuthApiError("rejected", "Invalid identifier.");
   return v.toLowerCase();
 }
-function contentShape(v: unknown): v is DraftContent {
+export function contentShape(v: unknown): v is DraftContent {
   if (!record(v) || new TextEncoder().encode(JSON.stringify(v)).length > 65536)
     return false;
   const timing = (v: unknown) =>
@@ -161,41 +161,47 @@ function validate(v: unknown, detailed: boolean): LessonSummary | Lesson {
       v.title !== (v.content.title ?? "")
     )
       throw invalid();
-    const ids = new Set();
-    for (const s of v.sources) {
-      if (
-        !record(s) ||
-        !exact(s, ["resourceId", "resourceVersion", "snapshot"]) ||
-        typeof s.resourceId !== "string" ||
-        !uuid.test(s.resourceId) ||
-        ids.has(s.resourceId) ||
-        !integer(s.resourceVersion) ||
-        !record(s.snapshot) ||
-        !exact(s.snapshot, [
-          "title",
-          "subject",
-          "grade",
-          "sourceReference",
-          "contentText",
-        ])
-      )
-        throw invalid();
-      const x = s.snapshot;
-      if (
-        x.subject !== "Mathematics" ||
-        x.grade !== "Grade 4" ||
-        !string(x.title, 200) ||
-        !(x.title as string).trim() ||
-        !string(x.sourceReference, 1000) ||
-        !(x.sourceReference as string).trim() ||
-        !string(x.contentText, 20000) ||
-        !(x.contentText as string).trim()
-      )
-        throw invalid();
-      ids.add(s.resourceId);
-    }
+    if (!sourceShape(v.sources)) throw invalid();
   }
   return v as Lesson;
+}
+// Shared structural response checks; these do not grant workflow permissions.
+export function sourceShape(value: unknown): value is Lesson["sources"] {
+  if (!Array.isArray(value) || value.length > 5) return false;
+  const ids = new Set();
+  for (const s of value) {
+    if (
+      !record(s) ||
+      !exact(s, ["resourceId", "resourceVersion", "snapshot"]) ||
+      typeof s.resourceId !== "string" ||
+      !uuid.test(s.resourceId) ||
+      ids.has(s.resourceId) ||
+      !integer(s.resourceVersion) ||
+      !record(s.snapshot) ||
+      !exact(s.snapshot, [
+        "title",
+        "subject",
+        "grade",
+        "sourceReference",
+        "contentText",
+      ])
+    )
+      return false;
+    const x = s.snapshot;
+    if (
+      x.subject !== "Mathematics" ||
+      x.grade !== "Grade 4" ||
+      !string(x.title, 200) ||
+      !(x.title as string).trim() ||
+      !string(x.sourceReference, 1000) ||
+      !(x.sourceReference as string).trim() ||
+      !string(x.contentText, 20000) ||
+      !(x.contentText as string).trim()
+    )
+      return false;
+    ids.add(s.resourceId);
+  }
+  return true;
 }
 export function createLessonsApi(
   base: string | undefined,

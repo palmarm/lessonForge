@@ -1,0 +1,471 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { AuthApiError } from "../src/lib/api-request.ts";
+import { initialReviewState } from "../src/lib/lesson-review-state.ts";
+import { createWorkspaceNavigation } from "../src/lib/workspace-navigation.ts";
+import {
+  fixture,
+  deferred,
+  lessonId,
+  revisionId,
+  otherId,
+  submitted,
+  review,
+  content,
+} from "./support/review-fixture.mjs";
+
+test("teacher submission requires a clean saved reconciled draft and locks saves/sources during preparation and confirmation", async () => {
+  const f = fixture();
+  await f.store.prepareSubmission();
+  assert.equal(f.calls.length, 0);
+  await f.drafts.view(lessonId);
+  f.drafts.field({ ...content, title: "Unsaved" });
+  await f.store.prepareSubmission();
+  assert.equal(f.calls.length, 0);
+  await f.drafts.save();
+  await f.store.prepareSubmission();
+  assert.equal(f.store.getSnapshot().confirmation.version, 5);
+  assert.equal(f.drafts.getSnapshot().workflowLocked, true);
+  await f.drafts.save();
+  await f.drafts.source(otherId, "remove");
+  assert.equal(f.calls.filter(([kind]) => kind === "save").length, 1);
+  assert.equal(
+    f.calls.some(([kind]) => kind === "source"),
+    false,
+  );
+  f.store.cancelConfirmation();
+  assert.equal(f.drafts.getSnapshot().workflowLocked, false);
+});
+test("duplicate submit confirmations send one version-checked write and retire only the confirmed editable draft", async () => {
+  const f = fixture();
+  await f.drafts.view(lessonId);
+  await f.store.prepareSubmission();
+  const gate = deferred(),
+    original = f.api.submit;
+  f.api.submit = async (...args) => {
+    const result = await original(...args);
+    await gate.promise;
+    return result;
+  };
+  const pending = f.store.confirm();
+  await f.store.confirm();
+  await f.drafts.save();
+  assert.equal(f.calls.filter(([kind]) => kind === "submit").length, 1);
+  assert.equal(f.store.getSnapshot().pending, "write");
+  gate.resolve();
+  await pending;
+  assert.equal(f.drafts.getSnapshot().form, null);
+  assert.equal(f.store.getSnapshot().selected.revision.id, revisionId);
+  assert.equal(f.store.getSnapshot().selected.workflow.state, "SUBMITTED");
+  assert.equal(f.drafts.getSnapshot().workflowLocked, false);
+});
+for (const reason of [
+  "rejected",
+  "conflict",
+  "unavailable",
+  "invalid-response",
+])
+  test(`submission ${reason} preserves saved work and never adopts workflow versions`, async () => {
+    const f = fixture();
+    await f.drafts.view(lessonId);
+    await f.store.prepareSubmission();
+    const before = structuredClone(f.drafts.getSnapshot().saved);
+    f.api.submit = async () => {
+      f.calls.push(["submit"]);
+      throw new AuthApiError(reason, "Safe failure");
+    };
+    await f.store.confirm();
+    assert.deepEqual(f.drafts.getSnapshot().saved, before);
+    assert.equal(f.drafts.getSnapshot().baseVersion, 4);
+    if (reason === "conflict") {
+      assert.equal(f.drafts.getSnapshot().blocked, true);
+      f.store.clearSubmissionConflict();
+      assert.equal(f.drafts.getSnapshot().blocked, true);
+    }
+    if (["unavailable", "invalid-response"].includes(reason)) {
+      assert.ok(f.store.getSnapshot().uncertain);
+      await f.store.prepareSubmission();
+    }
+    assert.equal(f.calls.filter(([kind]) => kind === "submit").length, 1);
+  });
+test("lost submission recovery matches the baseline revision after later review/resubmission and keeps historical snapshots", async () => {
+  const f = fixture();
+  await f.drafts.view(lessonId);
+  await f.store.prepareSubmission();
+  const original = f.api.submit;
+  f.api.submit = async (...args) => {
+    await original(...args);
+    throw new AuthApiError("unavailable", "Lost response");
+  };
+  await f.store.confirm();
+  const first = structuredClone(f.revisions[0]);
+  first.review = {
+    ...review,
+    decision: "REQUEST_CHANGES",
+    feedback: "Explain halves.",
+  };
+  f.revisions = [
+    first,
+    {
+      ...structuredClone(first),
+      id: otherId,
+      number: 2,
+      content: { ...content, title: "Later draft text" },
+      sources: [
+        {
+          ...first.sources[0],
+          resourceVersion: 2,
+          snapshot: {
+            ...first.sources[0].snapshot,
+            contentText: "Later resource text",
+          },
+        },
+      ],
+      review: null,
+    },
+  ];
+  f.current = {
+    lessonId,
+    version: 9,
+    state: "SUBMITTED",
+    currentRevisionId: otherId,
+  };
+  await f.store.recover();
+  assert.equal(f.store.getSnapshot().uncertain.kind, "submit");
+  assert.equal(f.store.getSnapshot().recovered, true);
+  assert.deepEqual(
+    f.store.getSnapshot().selected.revision.sources,
+    first.sources,
+  );
+  assert.equal(
+    f.store.getSnapshot().selected.revision.review.feedback,
+    "Explain halves.",
+  );
+  assert.equal(
+    f.store.getSnapshot().selected.workflow.currentRevisionId,
+    otherId,
+  );
+  assert.equal(f.drafts.getSnapshot().baseVersion, 4);
+  f.store.acknowledgeRecovery();
+  assert.equal(f.store.getSnapshot().uncertain, null);
+  assert.equal(f.drafts.getSnapshot().form, null);
+  assert.equal(f.calls.filter(([kind]) => kind === "submit").length, 1);
+});
+test("absent/different results and failed reconciliation cannot release submission uncertainty", async () => {
+  const f = fixture();
+  await f.drafts.view(lessonId);
+  await f.store.prepareSubmission();
+  f.api.submit = async () => {
+    throw new AuthApiError("unavailable", "Lost");
+  };
+  await f.store.confirm();
+  await f.store.recover();
+  f.store.acknowledgeRecovery();
+  assert.ok(f.store.getSnapshot().uncertain);
+  assert.equal(f.store.getSnapshot().recovered, false);
+  f.revisions = [
+    {
+      ...structuredClone(submitted.revision),
+      content: { ...content, title: "Different winner" },
+    },
+  ];
+  f.current = structuredClone(submitted.workflow);
+  await f.store.recover();
+  f.store.acknowledgeRecovery();
+  assert.ok(f.store.getSnapshot().uncertain);
+  f.revisions[0].content = structuredClone(content);
+  await f.store.recover();
+  assert.equal(f.store.getSnapshot().recovered, true);
+  f.api.history = async () => {
+    throw new AuthApiError("unavailable", "Read failed");
+  };
+  await f.store.recover();
+  f.store.acknowledgeRecovery();
+  assert.equal(f.store.getSnapshot().recovered, false);
+  assert.ok(f.store.getSnapshot().uncertain);
+  assert.equal(f.drafts.getSnapshot().workflowLocked, true);
+});
+test("submission recovery follows server cursors from page one instead of selecting the current revision", async () => {
+  const f = fixture();
+  await f.drafts.view(lessonId);
+  await f.store.prepareSubmission();
+  f.api.submit = async () => {
+    throw new AuthApiError("unavailable", "Lost");
+  };
+  await f.store.confirm();
+  const cursors = [];
+  f.api.history = async (_id, after) => {
+    cursors.push(after);
+    return {
+      workflow: submitted.workflow,
+      items: after ? [{ id: revisionId, number: 1 }] : [],
+      nextAfter: after ? null : otherId,
+    };
+  };
+  await f.store.recover();
+  assert.deepEqual(cursors, [undefined, otherId]);
+  assert.equal(f.store.getSnapshot().recovered, true);
+});
+test("admin requires exact current pending revision and comments for changes; duplicate confirmations do not compete locally", async () => {
+  const f = fixture("ADMIN");
+  f.current = structuredClone(submitted.workflow);
+  f.revisions = [structuredClone(submitted.revision)];
+  await f.store.detail(lessonId, revisionId);
+  f.store.prepareReview("REQUEST_CHANGES");
+  assert.equal(f.store.getSnapshot().confirmation, null);
+  f.store.comments("  Explain halves.  ");
+  f.store.prepareReview("REQUEST_CHANGES");
+  const gate = deferred(),
+    original = f.api.review;
+  f.api.review = async (...args) => {
+    const result = await original(...args);
+    await gate.promise;
+    return result;
+  };
+  const pending = f.store.confirm();
+  await f.store.confirm();
+  assert.equal(f.calls.filter(([kind]) => kind === "review").length, 1);
+  gate.resolve();
+  await pending;
+  assert.equal(
+    f.store.getSnapshot().selected.revision.review.feedback,
+    "Explain halves.",
+  );
+  assert.equal(
+    f.store.getSnapshot().selected.workflow.state,
+    "CHANGES_REQUESTED",
+  );
+});
+test("review conflict retains comments and requires fresh exact read plus explicit version acceptance", async () => {
+  const f = fixture("ADMIN");
+  f.current = structuredClone(submitted.workflow);
+  await f.store.detail(lessonId, revisionId);
+  f.store.comments("Retained comment");
+  f.store.prepareReview("APPROVE");
+  f.api.review = async () => {
+    throw new AuthApiError("conflict", "Changed");
+  };
+  await f.store.confirm();
+  f.current.version = 8;
+  await f.store.recover();
+  f.store.prepareReview("APPROVE");
+  assert.equal(f.store.getSnapshot().confirmation, null);
+  assert.equal(f.store.getSnapshot().blocked, true);
+  f.store.acceptComparison();
+  f.store.prepareReview("APPROVE");
+  assert.equal(f.store.getSnapshot().confirmation.version, 8);
+  assert.equal(f.store.getSnapshot().comments, "Retained comment");
+});
+test("lost review reconciles original revision and explicitly acknowledges a competing winner", async () => {
+  const f = fixture("ADMIN");
+  f.current = structuredClone(submitted.workflow);
+  await f.store.detail(lessonId, revisionId);
+  f.store.comments("My feedback");
+  f.store.prepareReview("APPROVE");
+  f.api.review = async () => {
+    throw new AuthApiError("unavailable", "Lost");
+  };
+  await f.store.confirm();
+  await f.store.recover();
+  f.store.acknowledgeRecovery();
+  assert.ok(f.store.getSnapshot().uncertain);
+  f.revisions = [
+    {
+      ...structuredClone(submitted.revision),
+      review: {
+        ...review,
+        reviewerId: otherId,
+        decision: "REQUEST_CHANGES",
+        feedback: "Other feedback",
+      },
+    },
+  ];
+  f.current = {
+    lessonId,
+    version: 10,
+    state: "SUBMITTED",
+    currentRevisionId: otherId,
+  };
+  await f.store.recover();
+  assert.match(f.store.getSnapshot().notice, /competing decision/);
+  assert.equal(f.store.getSnapshot().comments, "My feedback");
+  f.store.acknowledgeRecovery();
+  assert.equal(f.store.getSnapshot().uncertain, null);
+  f.store.prepareReview("APPROVE");
+  assert.equal(f.store.getSnapshot().confirmation, null);
+  assert.deepEqual(f.calls.filter(([kind]) => kind === "detail").at(-1), [
+    "detail",
+    lessonId,
+    revisionId,
+  ]);
+});
+test("permission failures retain comments; only current confirmed 401 disposes authentication", async () => {
+  const f = fixture("ADMIN");
+  f.current = structuredClone(submitted.workflow);
+  await f.store.detail(lessonId, revisionId);
+  f.store.comments("Retained");
+  f.api.detail = async () => {
+    throw new AuthApiError("rejected", "Forbidden");
+  };
+  await f.store.detail(lessonId, revisionId);
+  assert.equal(f.ended, 0);
+  assert.equal(f.store.getSnapshot().comments, "Retained");
+  f.api.detail = async () => {
+    throw new AuthApiError("unauthenticated", "Ended");
+  };
+  await f.store.detail(lessonId, revisionId);
+  assert.equal(f.ended, 1);
+});
+test("pause invalidates old read successes/401s and pending writes become uncertain; disposal rejects later results", async () => {
+  const f = fixture("ADMIN"),
+    read = deferred();
+  f.api.detail = () => read.promise;
+  const pending = f.store.detail(lessonId, revisionId);
+  f.store.pause(true);
+  f.store.pause(false);
+  read.reject(new AuthApiError("unauthenticated", "Old 401"));
+  await pending;
+  assert.equal(f.ended, 0);
+  assert.equal(f.store.getSnapshot().selected, null);
+  f.api.detail = async () => structuredClone(submitted);
+  await f.store.detail(lessonId, revisionId);
+  f.store.comments("Retain through pause");
+  f.store.prepareReview("APPROVE");
+  const write = deferred();
+  f.api.review = () => write.promise;
+  const writing = f.store.confirm();
+  f.store.pause(true);
+  assert.equal(f.store.getSnapshot().uncertain.kind, "review");
+  assert.equal(f.store.getSnapshot().comments, "Retain through pause");
+  f.store.dispose();
+  f.store.activate();
+  write.resolve({ ...submitted, revision: { ...submitted.revision, review } });
+  await writing;
+  assert.deepEqual(f.store.getSnapshot(), initialReviewState);
+});
+test("navigation protects dirty review comments separately from pending/uncertain writes", async () => {
+  const f = fixture("ADMIN"),
+    navigation = createWorkspaceNavigation();
+  navigation.register(() => {
+    const s = f.store.getSnapshot();
+    return {
+      dirty: !!s.comments,
+      blocked: s.pending === "write" || !!s.uncertain,
+      paused: false,
+    };
+  });
+  f.store.comments("Dirty comments");
+  assert.equal(
+    navigation.allow(() => false),
+    false,
+  );
+  assert.equal(
+    navigation.allow(() => true),
+    true,
+  );
+  f.api.detail = async () => structuredClone(submitted);
+  await f.store.detail(lessonId, revisionId, true);
+  f.store.prepareReview("APPROVE");
+  f.api.review = async () => {
+    throw new AuthApiError("unavailable", "Lost");
+  };
+  await f.store.confirm();
+  assert.equal(
+    navigation.allow(() => true),
+    false,
+  );
+});
+test("viewing another revision cannot silently transfer entered comments", async () => {
+  const f = fixture("ADMIN");
+  f.current = structuredClone(submitted.workflow);
+  await f.store.detail(lessonId, revisionId);
+  f.store.comments("Only for revision one");
+  await f.store.detail(lessonId, otherId);
+  assert.equal(f.store.getSnapshot().selected.revision.id, revisionId);
+  assert.equal(f.calls.filter(([kind]) => kind === "detail").length, 1);
+});
+
+test("a pending save excludes submission, and an interrupted preparation cannot restore a confirmation or hold the draft", async () => {
+  const f = fixture();
+  await f.drafts.view(lessonId);
+  // The fixture API uses an immediately resolved save, so the pending state lasts
+  // until its microtask settles and must already exclude a submission click.
+  const saving = f.drafts.save();
+  await f.store.prepareSubmission();
+  assert.equal(
+    f.calls.some(([kind]) => kind === "history"),
+    false,
+  );
+  await saving;
+  const saves = f.calls.filter(([kind]) => kind === "save").length;
+  const historyGate = deferred();
+  f.api.history = () => historyGate.promise;
+  const preparing = f.store.prepareSubmission();
+  assert.equal(f.drafts.getSnapshot().workflowLocked, true);
+  f.drafts.field({ ...content, title: "Must not replace the candidate" });
+  await f.drafts.save();
+  assert.equal(f.calls.filter(([kind]) => kind === "save").length, saves);
+  assert.equal(f.drafts.getSnapshot().form.title, content.title);
+  f.store.pause(true);
+  f.store.pause(false);
+  historyGate.resolve({ workflow: f.current, items: [], nextAfter: null });
+  await preparing;
+  assert.equal(f.store.getSnapshot().confirmation, null);
+  assert.equal(f.drafts.getSnapshot().workflowLocked, false);
+});
+
+test("resubmission uses the current reviewed revision number, preserves history and submits only the saved replacement", async () => {
+  const f = fixture();
+  const first = structuredClone(submitted.revision);
+  first.review = {
+    ...review,
+    decision: "REQUEST_CHANGES",
+    feedback: "Clarify tasks.",
+  };
+  f.revisions = [first];
+  f.current = {
+    lessonId,
+    version: 7,
+    state: "CHANGES_REQUESTED",
+    currentRevisionId: revisionId,
+  };
+  f.saved = {
+    ...f.saved,
+    version: 7,
+    state: "CHANGES_REQUESTED",
+    content: { ...content, title: "Revised saved lesson" },
+    title: "Revised saved lesson",
+  };
+  await f.drafts.view(lessonId);
+  await f.store.prepareSubmission();
+  assert.equal(f.store.getSnapshot().confirmation.baseline, 1);
+  assert.equal(f.store.getSnapshot().confirmation.version, 7);
+  f.api.submit = async (id, version) => {
+    f.calls.push(["submit", id, version]);
+    const result = {
+      workflow: {
+        lessonId,
+        version: version + 1,
+        state: "SUBMITTED",
+        currentRevisionId: otherId,
+      },
+      revision: {
+        ...structuredClone(submitted.revision),
+        id: otherId,
+        number: 2,
+        content: structuredClone(f.saved.content),
+      },
+    };
+    f.revisions.push(structuredClone(result.revision));
+    return result;
+  };
+  await f.store.confirm();
+  assert.equal(f.store.getSnapshot().selected.revision.number, 2);
+  assert.equal(
+    f.store.getSnapshot().selected.revision.content.title,
+    "Revised saved lesson",
+  );
+  assert.deepEqual(f.revisions[0], first);
+  assert.deepEqual(f.revisions[1].sources, first.sources);
+  assert.equal(f.drafts.getSnapshot().form, null);
+});

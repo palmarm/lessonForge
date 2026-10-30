@@ -1,11 +1,7 @@
 "use client";
 
 import { useId } from "react";
-import type {
-  ButtonHTMLAttributes,
-  ComponentProps,
-  TextareaHTMLAttributes,
-} from "react";
+import type { ButtonHTMLAttributes, ComponentProps } from "react";
 
 export function Button({
   className = "",
@@ -22,7 +18,7 @@ export function Input({ className = "", ...props }: ComponentProps<"input">) {
 export function Textarea({
   className = "",
   ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+}: ComponentProps<"textarea">) {
   return <textarea className={`field ${className}`} {...props} />;
 }
 
@@ -30,7 +26,7 @@ export function LabeledTextarea({
   label,
   id: suppliedId,
   ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string }) {
+}: ComponentProps<"textarea"> & { label: string }) {
   const generatedId = useId();
   const id = suppliedId ?? generatedId;
   return (
