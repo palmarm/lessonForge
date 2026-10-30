@@ -1,5 +1,34 @@
 # Guided live lesson-review acceptance
 
+## Latest acceptance update — developer-performed live checks
+
+The developer confirmed the following results against the live API/database.
+These were **developer-performed checks, not Codex-executed tests**:
+
+- Incomplete submission was rejected.
+- Submission → requested changes → editing → resubmission → approval passed.
+- Historical revision content, reviews and resource snapshots were preserved.
+- The approved lesson disappeared from pending reviews and editable drafts.
+
+This confirms the reported validation, lifecycle, historical preservation and
+post-approval list behavior. No additional HTTP statuses, lesson/revision IDs,
+versions, browser coverage or database inspection procedure were supplied; none
+is inferred. In particular, disappearance from a list alone is not evidence that
+an uncertain write failed.
+
+The readiness observations, all-pending checklist and 404 diagnosis below are
+retained as **historical evidence from before this confirmation**. Their blocked
+or pending statements do not negate these newly confirmed results. The earlier
+404 root cause remains unestablished; successful workflow checks do not identify
+its cause or establish which startup command/build was used.
+
+Outage/uncertain-write recovery, concurrency/stale-version acceptance,
+accessibility, other-browser and HTTPS acceptance remain pending unless
+separately evidenced. Unsaved-edit handling, exact saved-version targeting,
+refresh/reopen persistence, required-comment validation, two-lesson pagination
+isolation and navigation/session-boundary checks are also not established by
+this report. The full 12-step checklist is not marked complete.
+
 ## Readiness inspection — 2026-10-30
 
 Read root `AGENTS.md`, [the authoritative workflow API](../lesson-review.md),
