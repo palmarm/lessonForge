@@ -71,3 +71,35 @@ test("another mounted workspace can block leaving and disposal removes its prote
     true,
   );
 });
+
+test("unresolved copy survives workspace navigation but warns before confirmed session loss", () => {
+  const navigation = createWorkspaceNavigation();
+  const remove = navigation.register(() => ({
+    dirty: false,
+    blocked: false,
+    paused: false,
+    unresolvedCopy: true,
+  }));
+  assert.equal(
+    navigation.allow(() => {
+      throw new Error("ordinary navigation needs no copy confirmation");
+    }),
+    true,
+  );
+  assert.equal(navigation.snapshot().unresolvedCopy, true);
+  let message;
+  assert.equal(
+    navigation.allow((text) => {
+      message = text;
+      return false;
+    }, true),
+    false,
+  );
+  assert.match(message, /unresolved copy.*recovery key.*lost/);
+  assert.equal(
+    navigation.allow(() => true, true),
+    true,
+  );
+  remove();
+  assert.equal(navigation.snapshot().unresolvedCopy, undefined);
+});

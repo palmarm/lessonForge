@@ -19,8 +19,13 @@ import {
   initialReviewState,
 } from "@/lib/lesson-review-state";
 import type { ReviewStore } from "@/lib/lesson-review-state";
+import type { LibraryDetail } from "@/lib/library-api";
 
-function RevisionContent({ detail }: { detail: RevisionDetail }) {
+export function RevisionContent({
+  detail,
+}: {
+  detail: RevisionDetail | LibraryDetail;
+}) {
   const { revision, workflow } = detail,
     content = revision.content;
   const section = (
@@ -171,33 +176,37 @@ function RevisionContent({ detail }: { detail: RevisionDetail }) {
           </section>
         ))}
       </section>
-      <section className="space-y-2">
-        <h3 className="section-title">Review of this exact revision</h3>
-        {revision.review ? (
-          <>
-            <p className="font-semibold">
-              {revision.review.decision === "APPROVE"
-                ? "Approved"
-                : "Changes requested"}
+      {"review" in revision && (
+        <section className="space-y-2">
+          <h3 className="section-title">Review of this exact revision</h3>
+          {revision.review ? (
+            <>
+              <p className="font-semibold">
+                {revision.review.decision === "APPROVE"
+                  ? "Approved"
+                  : "Changes requested"}
+              </p>
+              <p className="whitespace-pre-wrap">
+                {revision.review.feedback ?? "No approval comments."}
+              </p>
+              <p className="text-sm">
+                Reviewer ID: {revision.review.reviewerId}
+              </p>
+              <p className="text-sm">
+                Review ID: {revision.review.id} ·{" "}
+                <time dateTime={revision.review.decidedAt}>
+                  {revision.review.decidedAt}
+                </time>
+              </p>
+            </>
+          ) : (
+            <p>
+              Awaiting administrator review. No decision is recorded in this
+              response.
             </p>
-            <p className="whitespace-pre-wrap">
-              {revision.review.feedback ?? "No approval comments."}
-            </p>
-            <p className="text-sm">Reviewer ID: {revision.review.reviewerId}</p>
-            <p className="text-sm">
-              Review ID: {revision.review.id} ·{" "}
-              <time dateTime={revision.review.decidedAt}>
-                {revision.review.decidedAt}
-              </time>
-            </p>
-          </>
-        ) : (
-          <p>
-            Awaiting administrator review. No decision is recorded in this
-            response.
-          </p>
-        )}
-      </section>
+          )}
+        </section>
+      )}
     </article>
   );
 }

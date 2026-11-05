@@ -10,6 +10,13 @@ import {
   review as recordedReview,
 } from "../support/review-fixture.mjs";
 
+import {
+  detail as approvedDetail,
+  summary as approvedSummary,
+  otherId as destinationId,
+  destination as copiedDraft,
+} from "../support/library-fixture.mjs";
+
 // Optional runner: never downloads packages/browsers. Fixture responses exist only
 // in this browser harness; all application calls use its real transport and stores.
 const { chromium } = await import(
@@ -201,6 +208,83 @@ async function fixture(identity = teacher, fallback = false) {
     if (url.pathname === "/auth/logout") {
       if (f.logoutStatus === 204) f.identity = null;
       return respond(f.logoutStatus, {});
+    }
+    if (f.library) {
+      const l = f.library;
+      if (url.pathname === "/library/approved") {
+        return respond(
+          200,
+          l.pages?.[url.searchParams.get("after") ?? "first"] ?? {
+            items: [approvedSummary],
+            nextAfter: null,
+          },
+        );
+      }
+      if (url.pathname.startsWith("/library/approved/"))
+        return respond(l.detailStatus ?? 200, l.detail);
+      if (url.pathname.endsWith("/copy") && method === "POST") {
+        const body = request.postDataJSON();
+        let operation = l.operations.get(body.operationKey);
+        const replay = !!operation;
+        if (!operation && !l.reject) {
+          operation = {
+            key: body.operationKey,
+            source: {
+              lessonId: l.detail.workflow.lessonId,
+              revisionId: l.detail.revision.id,
+              expectedVersion: body.expectedVersion,
+            },
+            destinationLessonId: l.operations.size
+              ? "99999999-9999-4999-8999-999999999999"
+              : destinationId,
+          };
+          l.operations.set(body.operationKey, operation);
+        }
+        const result = structuredClone(l.invalidReceipt ?? { operation });
+        const status = l.reject ?? (replay ? 200 : 201);
+        l.writeStarted?.resolve();
+        if (l.writeHold) await l.writeHold.promise;
+        if (l.drop) return route.abort("failed");
+        return respond(status, result);
+      }
+      if (url.pathname.startsWith("/library/copy-operations/")) {
+        const operation = l.operations.get(url.pathname.split("/").at(-1));
+        if (l.missingLookups > 0) {
+          l.missingLookups--;
+          return respond(404, {});
+        }
+        return respond(operation ? 200 : 404, { operation });
+      }
+      if (url.pathname === `/lessons/${destinationId}/revisions`) {
+        l.historyReads++;
+        return respond(200, {
+          workflow: {
+            ...l.workflow,
+            version:
+              l.race && l.historyReads % 2 === 0
+                ? l.workflow.version + 1
+                : l.workflow.version,
+          },
+          items: [],
+          nextAfter: null,
+        });
+      }
+      if (url.pathname.startsWith(`/lessons/${destinationId}/revisions/`)) {
+        return respond(200, {
+          workflow: l.workflow,
+          revision: {
+            ...l.detail.revision,
+            id: l.workflow.currentRevisionId,
+            review: l.workflow.state === "APPROVED" ? recordedReview : null,
+          },
+        });
+      }
+      if (url.pathname === `/lessons/${destinationId}` && method === "GET")
+        return respond(200, {
+          ...copiedDraft,
+          state: l.workflow.state,
+          version: l.workflow.version,
+        });
     }
     if (f.workflow) {
       const historyPath = `/lessons/${id}/revisions`;
@@ -469,6 +553,7 @@ async function fixture(identity = teacher, fallback = false) {
     f.detailHold?.resolve();
     f.workflowWriteHold?.resolve();
     f.workflowReadHold?.resolve();
+    f.library?.writeHold?.resolve();
     await context.close();
     assert.deepEqual(errors, []);
   };
@@ -4003,3 +4088,537 @@ for (const width of [320, 390, 768, 1024, 1440]) {
     }
   });
 }
+
+// These library cases intercept API responses. They are rendered evidence only;
+// none exercises NestJS, PostgreSQL, session cookies or deployed HTTPS.
+async function libraryFixture(role = "TEACHER") {
+  const f = await fixture(role === "ADMIN" ? admin : teacher);
+  f.library = {
+    detail: structuredClone(approvedDetail),
+    operations: new Map(),
+    missingLookups: 0,
+    historyReads: 0,
+    workflow: {
+      lessonId: destinationId,
+      version: 1,
+      state: "DRAFT",
+      currentRevisionId: null,
+    },
+  };
+  return f;
+}
+async function readApproved(f) {
+  await f.goto("/library");
+  await f.page
+    .getByRole("button", { name: "Read approved revision:", exact: false })
+    .click();
+  await f.page
+    .getByRole("region", { name: "Exact approved revision", exact: true })
+    .waitFor();
+}
+const copyControl = (p) =>
+  p.getByRole("button", { name: "Copy to my drafts", exact: true });
+const copyPosts = (f) =>
+  f.calls.filter((c) => c.method === "POST" && c.path.endsWith("/copy"));
+async function createLibraryCopy(f) {
+  await readApproved(f);
+  await copyControl(f.page).click();
+  await f.page
+    .getByRole("heading", { name: "Copy destination confirmed", exact: true })
+    .waitFor();
+}
+for (const role of ["TEACHER", "ADMIN"])
+  test(`library ${role}: navigation, exact content, origin, retained text and keyboard access`, async () => {
+    const f = await libraryFixture(role);
+    try {
+      const p = f.page;
+      await p.setViewportSize({ width: 390, height: 844 });
+      await f.goto(role === "ADMIN" ? "/admin/resources" : "/resources");
+      await tabTo(p, nav(p, "Library"));
+      await assertVisibleKeyboardFocus(nav(p, "Library"));
+      await p.keyboard.press("Enter");
+      await p
+        .getByRole("heading", { name: "Approved Library", exact: true })
+        .waitFor();
+      const read = p.getByRole("button", {
+        name: "Read approved revision:",
+        exact: false,
+      });
+      await tabTo(p, read);
+      await assertVisibleKeyboardFocus(read);
+      await p.keyboard.press("Enter");
+      const exact = p.getByRole("region", {
+        name: "Exact approved revision",
+        exact: true,
+      });
+      await exact.waitFor();
+      await exact.getByText("AI_ASSISTED", { exact: true }).waitFor();
+      await exact
+        .getByText("Original sample citation", { exact: true })
+        .waitFor();
+      const snapshot = exact.getByText("Read historical resource text", {
+        exact: true,
+      });
+      await tabTo(p, snapshot);
+      await assertVisibleKeyboardFocus(snapshot);
+      await p.keyboard.press("Enter");
+      await exact
+        .getByText("Historical equal parts text.", { exact: true })
+        .waitFor();
+      assert.equal(await copyControl(p).count(), role === "TEACHER" ? 1 : 0);
+      assert.equal(
+        await p.getByRole("button", { name: "Check copy status" }).count(),
+        0,
+      );
+      assert.equal(
+        f.calls.some((c) =>
+          c.path.startsWith(`/lessons/${approvedDetail.workflow.lessonId}`),
+        ),
+        false,
+        "source draft/history is never requested",
+      );
+      assert.equal(
+        await p.evaluate(
+          () => document.documentElement.scrollWidth > innerWidth,
+        ),
+        false,
+      );
+    } finally {
+      await f.close();
+    }
+  });
+test("library cursor browsing uses exact server cursor and explicit restart", async () => {
+  const f = await libraryFixture();
+  try {
+    const items = Array.from({ length: 20 }, (_, i) => ({
+      ...approvedSummary,
+      workflow: {
+        ...approvedSummary.workflow,
+        lessonId: `10000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      },
+    }));
+    const cursor = items.at(-1).workflow.lessonId;
+    f.library.pages = {
+      first: { items, nextAfter: cursor },
+      [cursor]: { items: [], nextAfter: null },
+    };
+    await f.goto("/library");
+    const p = f.page;
+    await p
+      .getByRole("button", { name: "Next library page", exact: true })
+      .click();
+    await p
+      .getByText("No approved lessons on this page.", { exact: true })
+      .waitFor();
+    assert.equal(
+      f.calls.filter((c) => c.path === "/library/approved").at(-1).search,
+      `?limit=20&after=${cursor}`,
+    );
+    await p
+      .getByRole("button", { name: "Restart library browsing", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "Next library page", exact: true })
+      .waitFor();
+    assert.equal(
+      f.calls.filter((c) => c.path === "/library/approved").at(-1).search,
+      "?limit=20",
+    );
+    assert.equal(await p.getByRole("searchbox").count(), 0);
+  } finally {
+    await f.close();
+  }
+});
+test("library lost response survives navigation: 404 remains unresolved then lookup confirms original destination", async () => {
+  const f = await libraryFixture();
+  try {
+    await readApproved(f);
+    const p = f.page;
+    f.library.drop = true;
+    await copyControl(p).click();
+    await p
+      .getByRole("button", { name: "Check copy status", exact: true })
+      .waitFor({ state: "visible" });
+    await p.getByRole("alert").filter({ hasText: "Unable to reach" }).waitFor();
+    const original = copyPosts(f)[0].body;
+    assert.match(
+      original.operationKey,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    await nav(p, "Resources").click();
+    await p
+      .getByRole("link", {
+        name: "Return to Library copy recovery",
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(
+      await p.evaluate(
+        () =>
+          !window.dispatchEvent(
+            new Event("beforeunload", { cancelable: true }),
+          ),
+      ),
+      true,
+    );
+    await p
+      .getByRole("link", {
+        name: "Return to Library copy recovery",
+        exact: true,
+      })
+      .click();
+    f.library.missingLookups = 1;
+    const check = p.getByRole("button", {
+      name: "Check copy status",
+      exact: true,
+    });
+    await tabTo(p, check);
+    await assertVisibleKeyboardFocus(check);
+    await p.keyboard.press("Enter");
+    await p
+      .getByRole("status")
+      .filter({ hasText: "No committed receipt found yet (404)" })
+      .waitFor();
+    assert.equal(await copyControl(p).isDisabled(), true);
+    await check.click();
+    await p
+      .getByRole("heading", { name: "Copy destination confirmed", exact: true })
+      .waitFor();
+    assert.equal(copyPosts(f).length, 1);
+    assert.equal(f.library.operations.size, 1);
+    await p
+      .getByRole("button", { name: "Read current destination", exact: true })
+      .click();
+    await p
+      .getByRole("button", {
+        name: "Open destination in My drafts",
+        exact: true,
+      })
+      .click();
+    await p.getByLabel("Title", { exact: true }).waitFor();
+    assert.equal(
+      await p.getByLabel("Title", { exact: true }).inputValue(),
+      copiedDraft.title,
+    );
+    assert.equal(
+      await p.getByText("Original sample citation", { exact: true }).count(),
+      1,
+    );
+  } finally {
+    await f.close();
+  }
+});
+test("library Retry same copy replays same key/body; another deliberate copy has a new key and destination", async () => {
+  const f = await libraryFixture();
+  try {
+    await readApproved(f);
+    const p = f.page;
+    f.library.drop = true;
+    await copyControl(p).click();
+    await p.getByRole("alert").filter({ hasText: "Unable to reach" }).waitFor();
+    f.library.drop = false;
+    const retry = p.getByRole("button", {
+      name: "Retry same copy",
+      exact: true,
+    });
+    await tabTo(p, retry);
+    await assertVisibleKeyboardFocus(retry);
+    await p.keyboard.press("Enter");
+    await p
+      .getByRole("heading", { name: "Copy destination confirmed", exact: true })
+      .waitFor();
+    assert.deepEqual(copyPosts(f)[0].body, copyPosts(f)[1].body);
+    assert.equal(f.library.operations.size, 1);
+    await copyControl(p).click();
+    await p
+      .getByRole("heading", { name: "Copy destination confirmed", exact: true })
+      .nth(1)
+      .waitFor();
+    assert.notEqual(
+      copyPosts(f)[2].body.operationKey,
+      copyPosts(f)[0].body.operationKey,
+    );
+    assert.equal(f.library.operations.size, 2);
+    assert.equal(
+      new Set(
+        [...f.library.operations.values()].map((o) => o.destinationLessonId),
+      ).size,
+      2,
+    );
+  } finally {
+    await f.close();
+  }
+});
+for (const outcome of ["invalid-201", "invalid-200", "409"])
+  test(`library ${outcome} shows recovery and retains original operation identity`, async () => {
+    const f = await libraryFixture();
+    try {
+      await readApproved(f);
+      const p = f.page;
+      if (outcome === "409") f.library.reject = 409;
+      else {
+        f.library.invalidReceipt = { operation: { key: "wrong" } };
+        if (outcome === "invalid-200") f.library.reject = 200;
+      }
+      await copyControl(p).click();
+      await p
+        .getByRole("alert")
+        .filter({
+          hasText:
+            outcome === "409" ? "Copy conflict" : "Unexpected library response",
+        })
+        .waitFor();
+      assert.equal(await copyControl(p).isDisabled(), true);
+      const original = copyPosts(f)[0].body;
+      await p
+        .getByRole("button", { name: "Retry same copy", exact: true })
+        .click();
+      await p
+        .getByRole("alert")
+        .filter({
+          hasText:
+            outcome === "409" ? "Copy conflict" : "Unexpected library response",
+        })
+        .waitFor();
+      assert.deepEqual(copyPosts(f)[1].body, original);
+      await p
+        .getByRole("button", { name: "Check copy status", exact: true })
+        .click();
+      await p
+        .getByRole("status")
+        .filter({
+          hasText:
+            outcome === "invalid-201"
+              ? "Copy destination confirmed."
+              : "No committed receipt found yet (404)",
+        })
+        .waitFor();
+      assert.equal(copyPosts(f).length, 2);
+    } finally {
+      await f.close();
+    }
+  });
+for (const changed of ["identity", "same-user-session"])
+  test(`library auth uncertainty pauses recovery; ${changed} ignores late receipt`, async () => {
+    const f = await libraryFixture();
+    try {
+      await readApproved(f);
+      const p = f.page;
+      f.library.writeHold = deferred();
+      f.library.writeStarted = deferred();
+      await copyControl(p).click();
+      await f.library.writeStarted.promise;
+      f.meStatus = 503;
+      await account(p)
+        .getByRole("button", { name: "Check session again" })
+        .click();
+      await p
+        .getByText(
+          "Library controls are paused while your session is unconfirmed. Check session again before recovering a copy.",
+          { exact: true },
+        )
+        .waitFor();
+      assert.equal(
+        await p
+          .getByRole("button", { name: "Retry same copy", exact: true })
+          .isDisabled(),
+        true,
+      );
+      f.identity =
+        changed === "identity"
+          ? {
+              ...teacher,
+              user: {
+                ...teacher.user,
+                id: destinationId,
+                displayName: "Other Teacher",
+              },
+            }
+          : { ...teacher, expiresAt: "2031-01-01T08:00:00.000Z" };
+      f.meStatus = 200;
+      await account(p)
+        .getByRole("button", { name: "Check session again" })
+        .click();
+      await p
+        .getByRole("button", { name: "Read approved revision:", exact: false })
+        .waitFor();
+      f.library.writeHold.resolve();
+      await p
+        .getByRole("button", { name: "Read approved revision:", exact: false })
+        .click();
+      assert.equal(
+        await p
+          .getByRole("heading", {
+            name: "Copy destination confirmed",
+            exact: true,
+          })
+          .count(),
+        0,
+      );
+      assert.equal(
+        await p
+          .getByRole("button", { name: "Check copy status", exact: true })
+          .count(),
+        0,
+      );
+      assert.equal(copyPosts(f).length, 1);
+    } finally {
+      await f.close();
+    }
+  });
+for (const state of ["SUBMITTED", "APPROVED"])
+  test(`library recovered destination already ${state} opens revision detail through history`, async () => {
+    const f = await libraryFixture();
+    try {
+      await createLibraryCopy(f);
+      const p = f.page;
+      f.library.workflow = {
+        lessonId: destinationId,
+        version: 5,
+        state,
+        currentRevisionId: submittedId,
+      };
+      await p
+        .getByRole("button", { name: "Read current destination", exact: true })
+        .click();
+      const current = p.getByRole("region", {
+        name: "Current copy destination",
+        exact: true,
+      });
+      await current
+        .getByRole("heading", {
+          name: `Current destination · ${state} · Version 5`,
+          exact: true,
+        })
+        .waitFor();
+      await current.getByText("Share equally.", { exact: true }).waitFor();
+      assert.equal(
+        await p
+          .getByRole("button", {
+            name: "Open destination in My drafts",
+            exact: true,
+          })
+          .count(),
+        0,
+      );
+      assert.equal(
+        f.calls.some((c) => c.path === `/lessons/${destinationId}`),
+        false,
+      );
+      assert.equal(
+        f.calls.filter((c) => c.path === `/lessons/${destinationId}/revisions`)
+          .length,
+        2,
+      );
+    } finally {
+      await f.close();
+    }
+  });
+test("library destination state race requires explicit reread; opening recovery preserves unsaved destination text", async () => {
+  const f = await libraryFixture();
+  try {
+    await createLibraryCopy(f);
+    const p = f.page;
+    f.library.race = true;
+    const inspect = p.getByRole("button", {
+      name: "Read current destination",
+      exact: true,
+    });
+    await inspect.click();
+    await p
+      .getByRole("alert")
+      .filter({ hasText: "Destination changed during inspection" })
+      .waitFor();
+    assert.equal(
+      await p
+        .getByRole("button", {
+          name: "Open destination in My drafts",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    f.library.race = false;
+    await inspect.click();
+    await p
+      .getByRole("button", {
+        name: "Open destination in My drafts",
+        exact: true,
+      })
+      .click();
+    await p
+      .getByLabel("Title", { exact: true })
+      .fill("Unsaved destination edits");
+    await dialog(p, true, () => nav(p, "Library").click());
+    await inspect.click();
+    await dialog(p, true, () =>
+      p
+        .getByRole("button", {
+          name: "Open destination in My drafts",
+          exact: true,
+        })
+        .click(),
+    );
+    assert.equal(
+      await p.getByLabel("Title", { exact: true }).inputValue(),
+      "Unsaved destination edits",
+    );
+    assert.equal(copyPosts(f).length, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("library pending copy survives navigation before POST returns; same-session auth pause needs explicit recovery", async () => {
+  const f = await libraryFixture();
+  try {
+    await readApproved(f);
+    const p = f.page;
+    f.library.writeHold = deferred();
+    f.library.writeStarted = deferred();
+    await copyControl(p).click();
+    await f.library.writeStarted.promise;
+    await nav(p, "Resources").click();
+    await p
+      .getByRole("link", {
+        name: "Return to Library copy recovery",
+        exact: true,
+      })
+      .waitFor();
+    f.meStatus = 503;
+    await account(p)
+      .getByRole("button", { name: "Check session again" })
+      .click();
+    await p
+      .getByRole("status")
+      .filter({ hasText: "We could not confirm the latest request." })
+      .waitFor();
+    f.library.writeHold.resolve();
+    f.meStatus = 200;
+    await account(p)
+      .getByRole("button", { name: "Check session again" })
+      .click();
+    await nav(p, "Library").click();
+    const check = p.getByRole("button", {
+      name: "Check copy status",
+      exact: true,
+    });
+    await check.waitFor();
+    assert.equal(
+      await p
+        .getByRole("heading", {
+          name: "Copy destination confirmed",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    await check.click();
+    await p
+      .getByRole("heading", { name: "Copy destination confirmed", exact: true })
+      .waitFor();
+    assert.equal(copyPosts(f).length, 1);
+  } finally {
+    await f.close();
+  }
+});

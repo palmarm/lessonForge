@@ -59,7 +59,7 @@ export function WorkspaceNavigation({
       () => requestLeave(),
       () => {
         const state = registry.snapshot();
-        return state.dirty || state.blocked;
+        return state.dirty || state.blocked || !!state.unresolvedCopy;
       },
       {
         pathname: () => committedPath.current,

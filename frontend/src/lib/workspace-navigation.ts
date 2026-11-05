@@ -1,4 +1,9 @@
-export type LeaveState = { dirty: boolean; blocked: boolean; paused: boolean };
+export type LeaveState = {
+  dirty: boolean;
+  blocked: boolean;
+  paused: boolean;
+  unresolvedCopy?: boolean;
+};
 
 // Read stores at the moment of navigation, including writes started before React renders.
 export function createWorkspaceNavigation() {
@@ -16,6 +21,9 @@ export function createWorkspaceNavigation() {
         dirty: states.some((state) => state.dirty),
         blocked: states.some((state) => state.blocked),
         paused: states.some((state) => state.paused),
+        ...(states.some((state) => state.unresolvedCopy)
+          ? { unresolvedCopy: true }
+          : {}),
       };
     },
     allow(
@@ -24,6 +32,10 @@ export function createWorkspaceNavigation() {
     ) {
       const state = this.snapshot();
       if (state.blocked || (state.paused && purpose !== true)) return false;
+      if (purpose === true && state.unresolvedCopy)
+        return confirm(
+          "Sign out with an unresolved copy? Its recovery key is kept only in this session and will be lost when sign out is confirmed. Unsaved edits will also be discarded only when sign out is confirmed. Return to Library to check its status first.",
+        );
       return (
         !state.dirty ||
         confirm(
