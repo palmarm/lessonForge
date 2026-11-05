@@ -206,6 +206,23 @@ export function createLessonsState(
       });
     },
     list,
+    openLibraryDestination: (saved: Lesson) => {
+      if (!idle() || state.uncertain || state.blocked) return false;
+      // Never replace an open editor, including unsaved work on this destination.
+      if (state.form) return state.editId === saved.id;
+      update({
+        saved,
+        form: structuredClone(saved.content),
+        editId: saved.id,
+        baseVersion: saved.version,
+        latest: null,
+        blocked: false,
+        error: null,
+        notice:
+          "Copied destination opened from its authorized current workflow. Retained source snapshots and generation origin are unchanged.",
+      });
+      return true;
+    },
     resources: (after?: string) =>
       run(null, async (signal) => {
         if (!resources) return {};

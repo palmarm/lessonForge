@@ -19,10 +19,9 @@ import { LabeledTextarea } from "./ui-controls";
 import { WorkflowView } from "./lesson-review-panel";
 import { createReviewApi } from "@/lib/lesson-review-api";
 import { createReviewState } from "@/lib/lesson-review-state";
-import { createLessonsApi, type DraftContent } from "@/lib/lessons-api";
-import { createResourcesApi } from "@/lib/resources-api";
+import { type DraftContent } from "@/lib/lessons-api";
+import { useDraftWorkspace } from "./draft-workspace";
 import {
-  createLessonsState,
   hasUnsavedLessonContent,
   initialLessonState,
 } from "@/lib/lessons-state";
@@ -173,13 +172,7 @@ function LessonsWorkspace({
   sessionEnded: () => void;
   actorId: string;
 }) {
-  const [store] = useState(() =>
-    createLessonsState(
-      createLessonsApi(process.env.NEXT_PUBLIC_API_BASE_URL),
-      sessionEnded,
-      createResourcesApi(process.env.NEXT_PUBLIC_API_BASE_URL),
-    ),
-  );
+  const store = useDraftWorkspace();
   const state = useSyncExternalStore(
     store.subscribe,
     store.getSnapshot,
@@ -193,13 +186,6 @@ function LessonsWorkspace({
       store,
     ),
   );
-  useLayoutEffect(() => {
-    store.activate();
-    return store.dispose;
-  }, [store]);
-  useLayoutEffect(() => {
-    store.pause(paused);
-  }, [store, paused]);
   useEffect(() => {
     void store.list();
   }, [store]);

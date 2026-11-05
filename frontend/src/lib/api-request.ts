@@ -67,6 +67,7 @@ export function createCredentialedRequest(
     options: {
       method?: "POST" | "PUT";
       messages?: Record<number, string>;
+      allowNotFound?: boolean;
     } = {},
   ): Promise<T> {
     // Lazy validation keeps the server-rendered public shell independent of API configuration.
@@ -150,7 +151,10 @@ export function createCredentialedRequest(
             "unavailable",
             "LessonForge is temporarily unavailable. Please try again.",
           );
-        if (!response.ok) {
+        if (
+          !response.ok &&
+          !(options.allowNotFound && response.status === 404)
+        ) {
           const messages: Record<number, string> = {
             400: "Check your email and password and try again.",
             403: "This request was blocked. Reload the page and try again.",

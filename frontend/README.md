@@ -2,7 +2,7 @@
 
 Next.js with TypeScript and Tailwind CSS. `/sign-in` provides teacher/admin
 authentication. The shared layout shows teacher Resources/My drafts/Revision
-history navigation and administrator Manage resources/Review submissions
+history/Library navigation and administrator Manage resources/Review submissions/Library
 navigation. NestJS owns authentication and authorization. See
 [Phase 1 integration](../docs/ui/frontend-design-integration.md)
 for workspace ownership, navigation protection and verification.
@@ -53,7 +53,11 @@ headers and complete response reading. Timeouts offer retry/session reconciliati
 login is never automatically retried and uncertain logout preserves identity.
 Submission, immutable revision history and administrator decisions are documented
 in the [lesson review UI guide](../docs/ui/lesson-review.md), including recovery,
-contract gaps and a manual checklist. Library browsing/copying, AI, and hosting
-remain deferred.
+contract gaps and a manual checklist. The [Approved Library guide](../docs/ui/approved-library.md)
+describes exact approved browsing, teacher copies, in-session recovery keys and
+current destination reconciliation. Copy keys survive navigation but are lost on
+reload, tab close or confirmed session end; unresolved copies show this limitation.
+Live integrated library acceptance and HTTPS remain pending. AI and hosting remain
+deferred.
 See the [CI guide](../docs/ci.md) for the implemented checks and pending workflow-run
 verification.

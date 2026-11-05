@@ -5,8 +5,9 @@ Keep approved design handoffs, phased integration records, UI verification notes
 and related implementation decisions here.
 
 - [Approved library and exact copy-operation recovery](approved-library.md) records
-  the backend contracts and frontend handoff. Frontend implementation and browser
-  verification for the library remain pending.
+  the backend contracts, implemented frontend recovery decisions and separate
+  verification evidence. Rendered execution is blocked by missing Chromium system
+  libraries; all four integrated live checks and HTTPS acceptance remain Pending.
 - [Guided live lesson-review acceptance](lesson-review-live-acceptance.md) records
   actual service-readiness observations, startup guidance and one-at-a-time manual
   results. Startup/sign-in and test 1 await user confirmation; no live pass is claimed.

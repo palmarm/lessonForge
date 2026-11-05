@@ -8,6 +8,8 @@ import { AuthPanel } from "./auth-panel";
 import { LessonsPanel } from "./lessons-panel";
 import { ResourcesPanel } from "./resources-panel";
 import { AdministratorReviewsPanel } from "./lesson-review-panel";
+import { LibraryPanel } from "./library-panel";
+import { DraftWorkspace } from "./draft-workspace";
 import { Button } from "./ui-controls";
 import { useWorkspaceNavigation } from "./workspace-navigation";
 
@@ -21,7 +23,8 @@ function PersistentWorkspaces({
   admin: boolean;
 }) {
   return (
-    <>
+    <DraftWorkspace>
+      <LibraryPanel />
       <div
         hidden={
           admin
@@ -47,7 +50,7 @@ function PersistentWorkspaces({
           <AdministratorReviewsPanel />
         </div>
       )}
-    </>
+    </DraftWorkspace>
   );
 }
 
@@ -62,11 +65,13 @@ export function ApplicationShell({ children }: { children: React.ReactNode }) {
     ? [
         { href: "/admin/resources", label: "Manage resources" },
         { href: "/admin/reviews", label: "Review submissions" },
+        { href: "/library", label: "Library" },
       ]
     : [
         { href: "/resources", label: "Resources" },
         { href: "/drafts", label: "My drafts" },
         { href: "/history", label: "Revision history" },
+        { href: "/library", label: "Library" },
       ];
   const workspaceRoute =
     navigation.some((item) => item.href === pathname) ||
