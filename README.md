@@ -79,7 +79,10 @@ Draft browser checks, automated rendered tests and HTTPS verification remain pen
 Backend submission completeness, immutable revisions/sources, administrator review,
 requested-change drafts, resubmission, history and pending-review queries are now
 implemented; see [workflow API and frontend handoff](docs/lesson-review.md).
-Submission/review frontend, seeding, library browsing/copying and AI remain pending. See
+Backend approved-library browsing and durable teacher copying are implemented; see
+[contracts, recovery and verification](docs/approved-library.md). The additive copy
+migration has not been applied to the development database. Submission/review
+frontend, seeding, library frontend and AI remain pending. See
 `docs/domain-schema.md` and `docs/domain-schema-verification.md`.
 See `docs/frontend-authentication-verification.md` for frontend checks and the
 manual browser checklist.
@@ -130,5 +133,7 @@ and PDF export are outside the initial MVP.
 - `docs/curriculum-resources.md` — resource contracts, original manual-entry sample, startup, browser checklist, and verification evidence.
 - `docs/teacher-drafts.md` — draft/source contracts, limits, concurrency, reconciliation, disposable tests and browser checklist.
 - `docs/lesson-review.md` — backend submission/review contracts, exact response envelopes, history reconciliation, transactions, verification and frontend handoff.
+- `docs/approved-library.md` — approved reads, durable copy identity, migration, recovery and verification.
+- `docs/ui/approved-library.md` — frontend integration handoff for approved browsing and exact operation recovery.
 - `docs/ui/README.md` — index for frontend integration and design documentation.
 - `docs/ui/frontend-design-integration.md` — Phase 1 shared frontend design, navigation/session protection, verification and remaining manual checks.

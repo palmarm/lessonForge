@@ -4,6 +4,9 @@ This directory is the home for frontend integration and design documentation.
 Keep approved design handoffs, phased integration records, UI verification notes,
 and related implementation decisions here.
 
+- [Approved library and exact copy-operation recovery](approved-library.md) records
+  the backend contracts and frontend handoff. Frontend implementation and browser
+  verification for the library remain pending.
 - [Guided live lesson-review acceptance](lesson-review-live-acceptance.md) records
   actual service-readiness observations, startup guidance and one-at-a-time manual
   results. Startup/sign-in and test 1 await user confirmation; no live pass is claimed.

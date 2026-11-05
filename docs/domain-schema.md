@@ -15,7 +15,10 @@ owned/version-checked saving, trusted resource selection/removal and explicit
 refresh are implemented without schema changes; see [draft contracts](teacher-drafts.md).
 Backend submission completeness, submission/review/resubmission, authorized history
 and pending-review services are implemented; see [workflow contracts](lesson-review.md).
-Seeding, workflow frontend, library browsing/copying and AI remain pending. The
+Backend library browsing/copying now adds durable operation fields on Lesson; see
+[contracts and additive migration verification](approved-library.md). That migration
+is not applied to the development database. Seeding, workflow/library frontend and
+AI remain pending. The
 [project specification](project-specification.md) is authoritative, particularly
 sections 2–8. The [architecture](architecture.md) assigns authorization,
 validation, and transactions to NestJS. The [roadmap](roadmap.md) places the manual
@@ -136,6 +139,8 @@ draft and a pointer to the latest submitted revision.
 | `draftGenerationOrigin` | Nullable `MANUAL`/`AI_ASSISTED`; present exactly when `draftContent` is present. Starts as `MANUAL` for manual work. |
 | `currentRevisionId` | Nullable pointer to the latest submitted `LessonRevision` belonging to this lesson. Null before the first submission. |
 | `copiedFromRevisionId` | Nullable FK to the exact approved source revision, preserving both the original lesson reference and the copied version. Set once when creating a copy. |
+| `copyOperationKey` | Nullable UUIDv4, unique together with ownerId. Successful teacher-scoped copy identity, stored on the destination and retained permanently. |
+| `copySourceVersion` | Nullable positive source lesson version bound to the operation key. Present exactly when copyOperationKey is present; copiedFromRevisionId supplies the immutable revision/parent lesson binding. |
 | `version` | Positive integer, incremented on every draft save and lifecycle change. Required in mutation preconditions. |
 | `createdAt`, `updatedAt` | Creation and last mutation timestamps. |
 
@@ -294,7 +299,12 @@ Resubmitting creates revision 2, 3, etc.; revision 1 and its review remain intac
 Copying follows `copiedFromRevisionId -> LessonRevision.lessonId` to recover the
 original lesson reference, so there is no conflicting second copy-source field.
 The new lesson's submissions start at number 1 and require their own review;
-copying does not transfer approval.
+copying does not transfer approval. Matching teacher-scoped operation retries
+recover the same destination without reinitializing its content or workflow. New
+keys allow intentional additional copies; mismatched successful-key parameters
+conflict. The additive migration protects key/version fields as write-once, pairs
+them with required provenance and prevents deletion of successful mappings.
+See [exact key format and recovery](approved-library.md#operation-identity-and-recovery).
 
 ## Keys, constraints, indexes, and deletion
 
@@ -492,8 +502,9 @@ establish authentication by themselves; separate
 [authentication verification](authentication-verification.md) records that work.
 Draft APIs and transaction-time editable-state/version checks are implemented.
 Submission/review/resubmission services are now implemented;
-see [workflow contracts and verification](lesson-review.md). Library browsing/copying
-and draft browser checks remain pending.
+see [workflow contracts and verification](lesson-review.md). Backend library browsing,
+copying and durable recovery are now implemented; see [library evidence](approved-library.md).
+Library frontend and draft browser checks remain pending.
 
 ## Acceptance examples for implementation
 
@@ -524,5 +535,5 @@ The initial design was a documentation-only task. Subsequent model/migration
 verification is recorded separately, including real PostgreSQL constraint tests.
 Lifecycle, authorization and submission-content examples now have backend service
 coverage; see [workflow verification](lesson-review.md#verification). Copy/library
-and AI examples remain future behavior, and workflow frontend/browser checks are
-separate pending work.
+examples now have separate [backend coverage](approved-library.md#verification).
+AI examples remain future behavior, and frontend/browser checks are separate work.

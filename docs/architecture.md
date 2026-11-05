@@ -29,7 +29,9 @@ see [draft contracts and verification](teacher-drafts.md). Resource browser comp
 was developer-reported on 2026-10-19. Backend submission/review/resubmission and
 immutable history/queue APIs are implemented; see
 [workflow contracts and verification](lesson-review.md). Resource
-seeding, submission/review frontend and library browsing/copying remain pending; see
+seeding and submission/review/library frontend remain pending. Backend library reads
+and durable teacher copying are implemented with an additive Lesson migration, not
+applied to the development database; see [library contracts](approved-library.md) and
 [domain verification](domain-schema-verification.md).
 
 ## 1. Technology choices
@@ -227,7 +229,12 @@ from NestJS validation and transactional concurrency rules. These mechanisms are
 implemented in models and initial migration SQL where applicable. Submission/review
 authorization, completeness/timing validation, lifecycle transitions and latest-revision
 checks are implemented in the lessons workflow service; approved-copy services
-remain pending. Draft structural validation,
+are now implemented with durable teacher-scoped operation keys. New copies take
+a transaction-scoped operation lock, then the source lesson lock; the destination
+row atomically stores its key, source version, provenance and exact copied content.
+Matching retries return an identity receipt even after destination lifecycle changes.
+The additive migration adds a unique owner/key index and immutable retained mapping
+protections; existing applied migrations remain unchanged. See [library contracts](approved-library.md). Draft structural validation,
 ownership/lifecycle/version transactions and trusted draft snapshot handling are
 implemented in the lessons module.
 Immutable-row triggers do not prevent a later source-row INSERT; finalized source

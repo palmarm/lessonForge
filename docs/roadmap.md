@@ -101,8 +101,9 @@ edits rejected and draft validation feedback. Submission uses the separate workf
 - [x] Implement administrator review of the exact submitted revision (backend API; frontend pending).
 - [x] Request changes with feedback (backend).
 - [x] Revise and resubmit while retaining history (backend).
-- [x] Approve exact revisions for library eligibility (backend; library browsing pending).
-- [ ] Browse approved lessons and copy them into new teacher-owned drafts with retained source snapshots.
+- [x] Approve exact revisions for library eligibility (backend; library backend implemented separately below).
+- [x] Backend approved-library browsing, exact copying and durable teacher-scoped operation recovery; see [contracts and verification](approved-library.md). Additive migration is not applied to the development database.
+- [ ] Integrate approved-library browsing/copying frontend and verify the complete browser workflow.
 - [x] Verify conflicting edits and review decisions are handled safely in backend tests; see [workflow evidence](lesson-review.md#verification).
 - [ ] Verify the complete manual workflow, including permissions and failure cases.
 
@@ -170,7 +171,8 @@ and browsing are implemented; resource browser completion was developer-reported
 on 2026-10-19. Teacher drafts are now implemented; draft browser/rendered checks
 remain pending. Backend submission/review/resubmission is now implemented; see
 [workflow verification and frontend handoff](lesson-review.md). Workflow frontend
-and approved-library browsing/copying remain milestone 3 work; infrastructure
+and library frontend remain milestone 3 work. Backend approved browsing/copying and
+durable operation recovery are now implemented; see [library evidence](approved-library.md). Infrastructure
 preparation may proceed alongside it.
 
 At the end of each session, record:
