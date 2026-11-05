@@ -6,11 +6,40 @@ import { Prisma, type PrismaClient } from '../src/generated/prisma/client.js';
 import { createDatabaseClient } from '../src/prisma/prisma.service.js';
 import { LessonsService } from '../src/lessons/lessons.service.js';
 import { LessonWorkflowService } from '../src/lessons/lesson-workflow.service.js';
+import { LibraryService } from '../src/lessons/library.service.js';
 import { completeContent } from './support/submission-content.js';
 import { ResourcesService } from '../src/resources/resources.service.js';
 import { resourceInput } from '../src/resources/resources.input.js';
 import { resolveConstraintDatabaseUrl } from './support/constraint-database.js';
 import { initializeConstraintDatabase } from './support/constraint-preflight.js';
+
+const library = () => new LibraryService(db);
+const otherLibrary = () => new LibraryService(other);
+async function approvedSource(origin: 'MANUAL' | 'AI_ASSISTED' = 'MANUAL') {
+  const saved = await prepared();
+  // Server-side provenance fixture; no AI provider or client-controlled origin.
+  if (origin === 'AI_ASSISTED')
+    await db.lesson.update({
+      where: { id: saved.id },
+      data: { draftGenerationOrigin: origin },
+    });
+  const submitted = await workflow().submit(teacher, saved.id, saved.version);
+  return workflow().review(admin, saved.id, submitted.revision.id, {
+    expectedVersion: submitted.workflow.version,
+    decision: 'APPROVE',
+    feedback: 'Private reviewer feedback',
+  });
+}
+function requestCopy(
+  source: Awaited<ReturnType<typeof approvedSource>>,
+  operationKey = randomUUID(),
+) {
+  return {
+    lessonId: source.workflow.lessonId,
+    revisionId: source.revision.id,
+    body: { operationKey, expectedVersion: source.workflow.version },
+  };
+}
 
 let db: PrismaClient, other: PrismaClient;
 let lessons: LessonsService,
@@ -313,7 +342,8 @@ it.each(['save', 'select', 'remove', 'refresh'] as const)(
         lessonId: created.id,
         number: 1,
         generationOrigin: 'MANUAL',
-        content: selected.content,
+        // This fixture is later approved, so it must also satisfy library validity.
+        content: completeContent,
       },
     });
     const snapshot = await db.revisionSource.create({
@@ -1237,3 +1267,831 @@ it.each(['SUBMITTED', 'APPROVED', 'CHANGES_REQUESTED'] as const)(
     }
   },
 );
+
+it('library exposes only approved current revisions to both roles without author/reviewer/feedback expansions', async () => {
+  const approved = await approvedSource();
+  const incomplete = await draft();
+  const pendingDraft = await prepared();
+  const pending = await workflow().submit(
+    teacher,
+    pendingDraft.id,
+    pendingDraft.version,
+  );
+  const changesDraft = await prepared();
+  const changesSubmission = await workflow().submit(
+    teacher,
+    changesDraft.id,
+    changesDraft.version,
+  );
+  const changes = await workflow().review(
+    admin,
+    changesDraft.id,
+    changesSubmission.revision.id,
+    {
+      expectedVersion: changesSubmission.workflow.version,
+      decision: 'REQUEST_CHANGES',
+      feedback: 'Private changes',
+    },
+  );
+  for (const actor of [teacher, foreign, admin]) {
+    const detail = await library().detail(
+      actor,
+      approved.workflow.lessonId,
+      approved.revision.id,
+    );
+    expect(Object.keys(detail).sort()).toEqual([
+      'approvedAt',
+      'revision',
+      'workflow',
+    ]);
+    expect(Object.keys(detail.revision).sort()).toEqual([
+      'content',
+      'generationOrigin',
+      'id',
+      'number',
+      'sources',
+      'submittedAt',
+    ]);
+    expect(detail.revision.content).toEqual(approved.revision.content);
+    expect(detail.revision.sources).toEqual(approved.revision.sources);
+    expect(detail.approvedAt).toEqual(approved.revision.review!.decidedAt);
+    for (const hidden of [
+      { lessonId: incomplete.id, revisionId: randomUUID() },
+      { lessonId: pending.workflow.lessonId, revisionId: pending.revision.id },
+      { lessonId: changes.workflow.lessonId, revisionId: changes.revision.id },
+      { lessonId: approved.workflow.lessonId, revisionId: pending.revision.id },
+    ])
+      await expect(
+        library().detail(actor, hidden.lessonId, hidden.revisionId),
+      ).rejects.toMatchObject({ status: 404 });
+  }
+  // A shared-library read must not expand the existing private history permission.
+  await expect(
+    workflow().history(foreign, approved.workflow.lessonId, 20),
+  ).rejects.toMatchObject({ status: 404 });
+  await expect(
+    lessons.detail(foreign, approved.workflow.lessonId),
+  ).rejects.toMatchObject({ status: 404 });
+  const listed = await library().list(foreign, 50);
+  expect(
+    listed.items.some(
+      (item) => item.workflow.lessonId === approved.workflow.lessonId,
+    ),
+  ).toBe(true);
+  for (const id of [incomplete.id, pendingDraft.id, changesDraft.id])
+    expect(listed.items.some((item) => item.workflow.lessonId === id)).toBe(
+      false,
+    );
+  for (const item of listed.items)
+    expect(Object.keys(item.revision).sort()).toEqual([
+      'generationOrigin',
+      'id',
+      'number',
+      'submittedAt',
+      'title',
+    ]);
+});
+
+it('paginates the approved library by exclusive lesson UUID with bounded coherent pages', async () => {
+  await approvedSource();
+  const all = await library().list(teacher, 50);
+  expect(all.items.length).toBeGreaterThan(1);
+  const seen: string[] = [];
+  let after: string | undefined;
+  do {
+    const page = await library().list(teacher, 1, after);
+    for (const item of page.items) seen.push(item.workflow.lessonId);
+    after = page.nextAfter ?? undefined;
+  } while (after);
+  expect(seen).toEqual(all.items.map((item) => item.workflow.lessonId));
+  expect(seen).toEqual([...seen].sort());
+  expect(
+    await library().list(teacher, 1, 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  ).toEqual({ items: [], nextAfter: null });
+});
+
+it.each(['MANUAL', 'AI_ASSISTED'] as const)(
+  'copies exact %s content and old/retired snapshots; source rows stay unchanged through independent review',
+  async (origin) => {
+    const source = await approvedSource(origin);
+    const before = await allRows(source.workflow.lessonId);
+    const first = source.revision.sources[0]!;
+    const second = source.revision.sources[1]!;
+    await resources.mutate('ADMIN', first.resourceId, first.resourceVersion, {
+      ...content,
+      contentText: 'Newer resource text',
+    });
+    await resources.mutate('ADMIN', second.resourceId, second.resourceVersion);
+    const request = requestCopy(source);
+    const copied = await library().copy(
+      foreign,
+      request.lessonId,
+      request.revisionId,
+      request.body,
+    );
+    expect(copied.created).toBe(true);
+    const id = copied.result.operation.destinationLessonId;
+    const rows = await allRows(id);
+    expect(rows.ownerId).toBe(foreign.id);
+    expect(rows.version).toBe(1);
+    expect(rows.currentRevisionId).toBeNull();
+    expect(rows.copiedFromRevisionId).toBe(source.revision.id);
+    expect(rows.copyOperationKey).toBe(request.body.operationKey);
+    expect(rows.copySourceVersion).toBe(request.body.expectedVersion);
+    expect(rows.revisions).toEqual([]);
+    let editable = await lessons.detail(foreign, id);
+    expect(editable.content).toEqual(source.revision.content);
+    expect(editable.sources).toEqual(source.revision.sources);
+    expect(editable.generationOrigin).toBe(origin);
+    await expect(lessons.detail(teacher, id)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(
+      lessons.mutate(foreign, id, 1, {
+        action: 'refresh',
+        resourceId: second.resourceId,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    editable = await lessons.mutate(foreign, id, 1, {
+      content: editable.content,
+    });
+    expect(editable.sources).toEqual(source.revision.sources);
+    const submitted = await workflow().submit(foreign, id, editable.version);
+    expect(submitted.revision.number).toBe(1);
+    expect(submitted.revision.review).toBeNull();
+    expect(submitted.revision.sources).toEqual(source.revision.sources);
+    expect(submitted.revision.generationOrigin).toBe(origin);
+    expect(submitted.workflow.state).toBe('SUBMITTED');
+    expect(await allRows(source.workflow.lessonId)).toEqual(before);
+  },
+);
+
+it('recovers a committed lost response with the same key after edit, submit, requested changes, resubmission and approval', async () => {
+  const source = await approvedSource();
+  const request = requestCopy(source);
+  // Commit the service operation, then discard its transport result.
+  await library().copy(
+    foreign,
+    request.lessonId,
+    request.revisionId,
+    request.body,
+  );
+  const recovered = await otherLibrary().recover(
+    foreign,
+    request.body.operationKey,
+  );
+  const id = recovered.operation.destinationLessonId;
+  const replay = async () => {
+    const before = await allRows(id);
+    expect(
+      await otherLibrary().copy(
+        foreign,
+        request.lessonId,
+        request.revisionId,
+        request.body,
+      ),
+    ).toEqual({ created: false, result: recovered });
+    expect(await library().recover(foreign, request.body.operationKey)).toEqual(
+      recovered,
+    );
+    expect(await allRows(id)).toEqual(before);
+    expect(Object.keys(recovered)).toEqual(['operation']);
+  };
+  await replay();
+  const edited = await lessons.mutate(foreign, id, 1, {
+    content: { ...completeContent, title: 'Edited destination' },
+  });
+  await replay();
+  expect((await lessons.detail(foreign, id)).content.title).toBe(
+    'Edited destination',
+  );
+  const submitted = await workflow().submit(foreign, id, edited.version);
+  await replay();
+  await expect(lessons.detail(foreign, id)).rejects.toMatchObject({
+    status: 409,
+  });
+  const changes = await workflow().review(admin, id, submitted.revision.id, {
+    expectedVersion: submitted.workflow.version,
+    decision: 'REQUEST_CHANGES',
+    feedback: 'Revise independently',
+  });
+  await replay();
+  const next = await workflow().submit(foreign, id, changes.workflow.version);
+  await workflow().review(admin, id, next.revision.id, {
+    expectedVersion: next.workflow.version,
+    decision: 'APPROVE',
+  });
+  await replay();
+  expect((await workflow().history(foreign, id, 20)).workflow.state).toBe(
+    'APPROVED',
+  );
+  expect(
+    await db.lesson.count({
+      where: {
+        ownerId: foreign.id,
+        copyOperationKey: request.body.operationKey,
+      },
+    }),
+  ).toBe(1);
+});
+
+it('binds successful keys to every source parameter, isolates teachers, and permits new-key intentional copies', async () => {
+  const source = await approvedSource();
+  const another = await approvedSource();
+  const request = requestCopy(source);
+  const original = await library().copy(
+    foreign,
+    request.lessonId,
+    request.revisionId,
+    request.body,
+  );
+  const before = await allRows(original.result.operation.destinationLessonId);
+  for (const [lessonId, revisionId, body] of [
+    [another.workflow.lessonId, request.revisionId, request.body],
+    [request.lessonId, another.revision.id, request.body],
+    [
+      request.lessonId,
+      request.revisionId,
+      { ...request.body, expectedVersion: request.body.expectedVersion - 1 },
+    ],
+    [
+      another.workflow.lessonId,
+      another.revision.id,
+      { ...request.body, expectedVersion: another.workflow.version },
+    ],
+  ] as const)
+    await expect(
+      library().copy(foreign, lessonId, revisionId, body),
+    ).rejects.toMatchObject({ status: 409 });
+  expect(await allRows(before.id)).toEqual(before);
+  await expect(
+    library().recover(teacher, request.body.operationKey),
+  ).rejects.toMatchObject({ status: 404 });
+  const isolated = await library().copy(
+    teacher,
+    request.lessonId,
+    request.revisionId,
+    request.body,
+  );
+  const intentional = await library().copy(
+    foreign,
+    request.lessonId,
+    request.revisionId,
+    { ...request.body, operationKey: randomUUID() },
+  );
+  expect(
+    new Set(
+      [original, isolated, intentional].map(
+        (result) => result.result.operation.destinationLessonId,
+      ),
+    ).size,
+  ).toBe(3);
+  await expect(
+    library().copy(admin, request.lessonId, request.revisionId, request.body),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(
+    library().recover(admin, request.body.operationKey),
+  ).rejects.toMatchObject({ status: 403 });
+});
+
+it('rejects invalid, stale and ineligible copy requests without reserving the key or inserting a destination', async () => {
+  const source = await approvedSource();
+  const incomplete = await draft();
+  const pendingDraft = await prepared();
+  const pending = await workflow().submit(
+    teacher,
+    pendingDraft.id,
+    pendingDraft.version,
+  );
+  const changed = await workflow().review(
+    admin,
+    pendingDraft.id,
+    pending.revision.id,
+    {
+      expectedVersion: pending.workflow.version,
+      decision: 'REQUEST_CHANGES',
+      feedback: 'Not approved',
+    },
+  );
+  const key = randomUUID();
+  const count = await db.lesson.count();
+  for (const [lessonId, revisionId, expectedVersion, status] of [
+    [
+      source.workflow.lessonId,
+      source.revision.id,
+      source.workflow.version - 1,
+      409,
+    ],
+    [incomplete.id, randomUUID(), 1, 404],
+    [
+      changed.workflow.lessonId,
+      changed.revision.id,
+      changed.workflow.version,
+      404,
+    ],
+    [
+      source.workflow.lessonId,
+      changed.revision.id,
+      source.workflow.version,
+      404,
+    ],
+    [randomUUID(), source.revision.id, 1, 404],
+  ] as const)
+    await expect(
+      library().copy(foreign, lessonId, revisionId, {
+        operationKey: key,
+        expectedVersion,
+      }),
+    ).rejects.toMatchObject({ status });
+  await expect(
+    library().copy(foreign, source.workflow.lessonId, source.revision.id, {
+      operationKey: key,
+      expectedVersion: source.workflow.version,
+      content: {},
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+  expect(await db.lesson.count()).toBe(count);
+  await expect(library().recover(foreign, key)).rejects.toMatchObject({
+    status: 404,
+  });
+  expect(
+    (
+      await library().copy(
+        foreign,
+        source.workflow.lessonId,
+        source.revision.id,
+        { operationKey: key, expectedVersion: source.workflow.version },
+      )
+    ).created,
+  ).toBe(true);
+});
+
+function copyGate(stage: 'operation' | 'source' | 'insert') {
+  let release!: () => void, ready!: (pid: number) => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const locked = new Promise<number>((resolve) => {
+    ready = resolve;
+  });
+  const client = {
+    $transaction: (
+      run: (tx: Prisma.TransactionClient) => Promise<unknown>,
+      options: object,
+    ) =>
+      db.$transaction(async (tx) => {
+        const pause = async () => {
+          const [{ pid }] = await tx.$queryRaw<
+            { pid: number }[]
+          >`SELECT pg_backend_pid() AS pid`;
+          ready(pid!);
+          await gate;
+        };
+        const wrapped = new Proxy(tx, {
+          get(target, name) {
+            if (name === '$queryRaw')
+              return async (...args: unknown[]) => {
+                const result = await Reflect.apply(
+                  target.$queryRaw,
+                  target,
+                  args,
+                );
+                const sql = (args[0] as TemplateStringsArray).join('');
+                if (
+                  (stage === 'operation' &&
+                    sql.includes('pg_advisory_xact_lock')) ||
+                  (stage === 'source' && sql.includes('FOR UPDATE'))
+                )
+                  await pause();
+                return result;
+              };
+            if (name === 'lesson' && stage === 'insert')
+              return new Proxy(target.lesson, {
+                get(delegate, method) {
+                  if (method !== 'create') return Reflect.get(delegate, method);
+                  return async (...args: unknown[]) => {
+                    const result = await Reflect.apply(
+                      Reflect.get(delegate, method),
+                      delegate,
+                      args,
+                    );
+                    await pause();
+                    return result;
+                  };
+                },
+              });
+            return Reflect.get(target, name);
+          },
+        });
+        return run(wrapped);
+      }, options),
+  } as unknown as PrismaClient;
+  return { client, locked, release };
+}
+async function waitForCopyLock(pid: number, sql: string) {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const rows = await other.$queryRaw<{ waiting: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'
+          AND ${pid} = ANY(pg_blocking_pids(pid)) AND query LIKE ${sql}) AS waiting
+    `;
+    if (rows[0]?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('Copy lock contention was not observed.');
+}
+
+it.each(['matching', 'mismatched'] as const)(
+  'observes same-key %s requests waiting for a real inserted, uncommitted copy',
+  async (kind) => {
+    const source = await approvedSource();
+    const request = requestCopy(source);
+    const before = await allRows(source.workflow.lessonId);
+    const gate = copyGate('insert');
+    const holding = new LibraryService(gate.client).copy(
+      foreign,
+      request.lessonId,
+      request.revisionId,
+      request.body,
+    );
+    let pending:
+      | Promise<
+          PromiseSettledResult<Awaited<ReturnType<LibraryService['copy']>>>[]
+        >
+      | undefined;
+    try {
+      const pid = await Promise.race([
+        gate.locked,
+        holding.then(() => {
+          throw new Error('Insert gate not reached');
+        }),
+      ]);
+      let settled = false;
+      pending = Promise.allSettled([
+        otherLibrary().copy(foreign, request.lessonId, request.revisionId, {
+          ...request.body,
+          expectedVersion:
+            request.body.expectedVersion - (kind === 'mismatched' ? 1 : 0),
+        }),
+      ]).finally(() => {
+        settled = true;
+      });
+      await waitForCopyLock(pid, '%pg_advisory_xact_lock%');
+      expect(settled).toBe(false);
+      // Uncommitted identity/destination must not be falsely reported as successful.
+      await expect(
+        otherLibrary().recover(foreign, request.body.operationKey),
+      ).rejects.toMatchObject({ status: 404 });
+    } finally {
+      gate.release();
+      await Promise.allSettled([holding, ...(pending ? [pending] : [])]);
+    }
+    const first = await holding;
+    const [second] = await pending!;
+    expect(first.created).toBe(true);
+    if (kind === 'matching') {
+      expect(second!.status).toBe('fulfilled');
+      if (second!.status === 'fulfilled')
+        expect(second!.value).toEqual({ created: false, result: first.result });
+    } else {
+      expect(second!.status).toBe('rejected');
+      if (second!.status === 'rejected')
+        expect(second!.reason).toMatchObject({ status: 409 });
+    }
+    expect(
+      await db.lesson.count({
+        where: {
+          ownerId: foreign.id,
+          copyOperationKey: request.body.operationKey,
+        },
+      }),
+    ).toBe(1);
+    expect(await allRows(source.workflow.lessonId)).toEqual(before);
+  },
+);
+
+it('observes different-key copies contending on the source lesson and creates two intentional destinations', async () => {
+  const source = await approvedSource();
+  const request = requestCopy(source);
+  const gate = copyGate('source');
+  const holding = new LibraryService(gate.client).copy(
+    foreign,
+    request.lessonId,
+    request.revisionId,
+    request.body,
+  );
+  let pending: Promise<Awaited<ReturnType<LibraryService['copy']>>> | undefined;
+  try {
+    const pid = await Promise.race([
+      gate.locked,
+      holding.then(() => {
+        throw new Error('Source gate not reached');
+      }),
+    ]);
+    pending = otherLibrary().copy(
+      foreign,
+      request.lessonId,
+      request.revisionId,
+      { ...request.body, operationKey: randomUUID() },
+    );
+    await waitForCopyLock(pid, '%FROM "Lesson"%FOR UPDATE%');
+  } finally {
+    gate.release();
+    await Promise.allSettled([holding, ...(pending ? [pending] : [])]);
+  }
+  const first = await holding,
+    second = await pending!;
+  expect(first.created).toBe(true);
+  expect(second.created).toBe(true);
+  expect(first.result.operation.destinationLessonId).not.toBe(
+    second.result.operation.destinationLessonId,
+  );
+});
+
+it('rolls back the actual destination/identity insert and lets a waiting same-key request create the sole committed copy', async () => {
+  const source = await approvedSource();
+  const request = requestCopy(source);
+  const before = await allRows(source.workflow.lessonId);
+  const gate = copyGate('insert');
+  let wrote = false;
+  const failing = new LibraryService({
+    $transaction: (
+      run: (tx: Prisma.TransactionClient) => Promise<unknown>,
+      options: object,
+    ) =>
+      gate.client.$transaction(async (tx) => {
+        await run(tx);
+        wrote = true;
+        throw new Error('Injected after actual copy insert');
+      }, options),
+  } as unknown as PrismaClient);
+  const holding = failing.copy(
+    foreign,
+    request.lessonId,
+    request.revisionId,
+    request.body,
+  );
+  // Handle the injected rejection immediately while the waiter is observed.
+  const failure = expect(holding).rejects.toThrow(
+    'Injected after actual copy insert',
+  );
+  let pending: Promise<Awaited<ReturnType<LibraryService['copy']>>> | undefined;
+  try {
+    const pid = await Promise.race([
+      gate.locked,
+      holding.then(() => {
+        throw new Error('Insert gate not reached');
+      }),
+    ]);
+    pending = otherLibrary().copy(
+      foreign,
+      request.lessonId,
+      request.revisionId,
+      request.body,
+    );
+    await waitForCopyLock(pid, '%pg_advisory_xact_lock%');
+  } finally {
+    gate.release();
+    await Promise.allSettled([failure, ...(pending ? [pending] : [])]);
+  }
+  await failure;
+  expect(wrote).toBe(true);
+  const committed = await pending!;
+  expect(committed.created).toBe(true);
+  expect(
+    await db.lesson.count({
+      where: {
+        ownerId: foreign.id,
+        copyOperationKey: request.body.operationKey,
+      },
+    }),
+  ).toBe(1);
+  expect(await library().recover(foreign, request.body.operationKey)).toEqual(
+    committed.result,
+  );
+  expect(await allRows(source.workflow.lessonId)).toEqual(before);
+});
+
+it('rolls back an actual insert without a waiter, leaving no mapping or orphan destination', async () => {
+  const source = await approvedSource();
+  const request = requestCopy(source);
+  const before = await db.lesson.findMany({ orderBy: { id: 'asc' } });
+  let insertedId: string | undefined;
+  const failing = new LibraryService({
+    $transaction: (
+      run: (
+        tx: Prisma.TransactionClient,
+      ) => Promise<{ result: { operation: { destinationLessonId: string } } }>,
+      options: object,
+    ) =>
+      db.$transaction(async (tx) => {
+        const result = await run(tx);
+        insertedId = result.result.operation.destinationLessonId;
+        expect(
+          await tx.lesson.findUnique({ where: { id: insertedId } }),
+        ).not.toBeNull();
+        throw new Error('Injected after actual insert');
+      }, options),
+  } as unknown as PrismaClient);
+  await expect(
+    failing.copy(foreign, request.lessonId, request.revisionId, request.body),
+  ).rejects.toThrow('Injected after actual insert');
+  expect(insertedId).toBeDefined();
+  expect(await db.lesson.findMany({ orderBy: { id: 'asc' } })).toEqual(before);
+  expect(await db.lesson.findUnique({ where: { id: insertedId! } })).toBeNull();
+  await expect(
+    library().recover(foreign, request.body.operationKey),
+  ).rejects.toMatchObject({ status: 404 });
+  expect(
+    (
+      await library().copy(
+        foreign,
+        request.lessonId,
+        request.revisionId,
+        request.body,
+      )
+    ).created,
+  ).toBe(true);
+});
+
+it('database protects operation identity, successful mapping retention, format, pair consistency and actor-scoped uniqueness', async () => {
+  const source = await approvedSource();
+  const request = requestCopy(source);
+  const copied = await library().copy(
+    foreign,
+    request.lessonId,
+    request.revisionId,
+    request.body,
+  );
+  const id = copied.result.operation.destinationLessonId;
+  const before = await allRows(id);
+  // No incoming revision FK exists yet: rejection must come from identity protection.
+  expect(before.currentRevisionId).toBeNull();
+  expect(before.revisions).toEqual([]);
+  const replacementId = randomUUID();
+  let failure: { code?: string; message?: string } | undefined;
+  try {
+    await db.$executeRaw`UPDATE "Lesson" SET id = ${replacementId}::uuid WHERE id = ${id}::uuid`;
+  } catch (error) {
+    // The adapter retains SQLSTATE/message but omits the native constraint name.
+    const meta = (
+      error as {
+        meta?: {
+          code?: string;
+          message?: string;
+          driverAdapterError?: {
+            cause?: { originalCode?: string; originalMessage?: string };
+          };
+        };
+      }
+    ).meta;
+    const cause = meta?.driverAdapterError?.cause;
+    failure = {
+      code: cause?.originalCode ?? meta?.code,
+      message: cause?.originalMessage ?? meta?.message,
+    };
+  }
+  expect(failure).toEqual({
+    code: '23514',
+    message: 'Successful copy destination identity is write-once.',
+  });
+  await expect(
+    db.lesson.update({ where: { id }, data: { id: replacementId } }),
+  ).rejects.toThrow('Successful copy destination identity is write-once.');
+  expect(await allRows(id)).toEqual(before);
+  expect(
+    await db.lesson.findUnique({ where: { id: replacementId } }),
+  ).toBeNull();
+  expect(before).toMatchObject({
+    id,
+    ownerId: foreign.id,
+    copyOperationKey: request.body.operationKey,
+    copiedFromRevisionId: source.revision.id,
+    copySourceVersion: request.body.expectedVersion,
+  });
+  expect(
+    await library().copy(
+      foreign,
+      request.lessonId,
+      request.revisionId,
+      request.body,
+    ),
+  ).toEqual({ created: false, result: copied.result });
+  expect(await library().recover(foreign, request.body.operationKey)).toEqual(
+    copied.result,
+  );
+  for (const data of [
+    { copyOperationKey: randomUUID() },
+    { copyOperationKey: null },
+    { copySourceVersion: source.workflow.version + 1 },
+    { copiedFromRevisionId: null },
+    { ownerId: teacher.id },
+  ])
+    await expect(db.lesson.update({ where: { id }, data })).rejects.toThrow();
+  await expect(db.lesson.delete({ where: { id } })).rejects.toThrow();
+  for (const data of [
+    { copyOperationKey: randomUUID() },
+    { copySourceVersion: 1 },
+    {
+      copyOperationKey: randomUUID(),
+      copySourceVersion: 0,
+      copiedFromRevisionId: source.revision.id,
+    },
+    {
+      copyOperationKey: '11111111-1111-1111-8111-111111111111',
+      copySourceVersion: 1,
+      copiedFromRevisionId: source.revision.id,
+    },
+    {
+      copyOperationKey: request.body.operationKey,
+      copySourceVersion: source.workflow.version,
+      copiedFromRevisionId: source.revision.id,
+    },
+  ])
+    await expect(
+      db.lesson.create({ data: { ownerId: foreign.id, ...data } }),
+    ).rejects.toThrow();
+  expect(await allRows(id)).toEqual(before);
+  const edited = await lessons.mutate(foreign, id, before.version, {
+    content: { ...completeContent, title: 'Editable copied draft' },
+  });
+  expect(edited.content.title).toBe('Editable copied draft');
+  expect(edited.version).toBe(before.version + 1);
+  expect(await library().recover(foreign, request.body.operationKey)).toEqual(
+    copied.result,
+  );
+});
+
+it('keeps library multi-query reads read-only and repeatable while another lesson becomes approved', async () => {
+  const saved = await prepared();
+  const submitted = await workflow().submit(teacher, saved.id, saved.version);
+  let release!: () => void, reached!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const ready = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  let paused = false;
+  const reader = new LibraryService({
+    $transaction: (
+      run: (tx: Prisma.TransactionClient) => Promise<unknown>,
+      options: object,
+    ) =>
+      db.$transaction(async (tx) => {
+        const wrapped = new Proxy(tx, {
+          get(target, name) {
+            if (name !== 'lesson') return Reflect.get(target, name);
+            return new Proxy(target.lesson, {
+              get(delegate, method) {
+                const original = Reflect.get(delegate, method);
+                if (method !== 'findMany') return original;
+                return async (...args: unknown[]) => {
+                  const value = await Reflect.apply(original, delegate, args);
+                  if (!paused) {
+                    paused = true;
+                    const [flags] = await tx.$queryRaw<
+                      { readOnly: string; isolation: string }[]
+                    >`SELECT current_setting('transaction_read_only') AS "readOnly", current_setting('transaction_isolation') AS isolation`;
+                    expect(flags).toEqual({
+                      readOnly: 'on',
+                      isolation: 'repeatable read',
+                    });
+                    reached();
+                    await gate;
+                  }
+                  return value;
+                };
+              },
+            });
+          },
+        });
+        return run(wrapped);
+      }, options),
+  } as unknown as PrismaClient);
+  const reading = reader.list(foreign, 50);
+  try {
+    await Promise.race([
+      ready,
+      reading.then(() => {
+        throw new Error('Read gate not reached');
+      }),
+    ]);
+    await competingWorkflow().review(admin, saved.id, submitted.revision.id, {
+      expectedVersion: submitted.workflow.version,
+      decision: 'APPROVE',
+    });
+  } finally {
+    release();
+    await Promise.allSettled([reading]);
+  }
+  expect(
+    (await reading).items.some((item) => item.workflow.lessonId === saved.id),
+  ).toBe(false);
+  expect(
+    (await library().list(foreign, 50)).items.some(
+      (item) => item.workflow.lessonId === saved.id,
+    ),
+  ).toBe(true);
+});

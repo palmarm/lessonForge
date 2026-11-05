@@ -1,5 +1,10 @@
 # LessonForge submission and administrator review
 
+Approved-library browsing and durable teacher copying are implemented separately;
+see [library contracts](approved-library.md) and the [frontend handoff](ui/approved-library.md).
+Their operation keys do not change submission/review retry rules or private history
+permissions. The original increment and its verification records below remain historical.
+
 ## Contract agreed before implementation
 
 This backend-only increment uses the existing Lesson, LessonRevision,

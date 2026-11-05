@@ -64,7 +64,13 @@ Publication means availability in the application's approved lesson library.
 - A request for changes requires feedback.
 - Resubmission preserves the earlier submission and review.
 - Approved revisions remain unchanged.
-- Copying an approved lesson creates a new lesson owned by the teacher making the copy and records the original lesson reference.
+- Copying an approved lesson creates a new teacher-owned draft, retains its exact
+  approved revision reference, source snapshots and generation origin, and requires
+  independent submission/review. It inherits no approval or review history.
+- Copy operation keys are scoped to the authenticated teacher and permanently bind
+  the exact source lesson, revision and version precondition to one destination.
+  Matching retries recover that destination; changed parameters conflict. A new key
+  permits another intentional copy. Recovery never overwrites later destination work.
 - Conflicting edits or review decisions must not silently overwrite each other.
 - Authorization must succeed before a version-conflict response returns current
   lesson content; return only content the caller is permitted to read.
@@ -141,8 +147,10 @@ tracked in [frontend verification](frontend-authentication-verification.md). Cur
 resource management and browsing are implemented; resource browser checklist
 completion was developer-reported on 2026-10-19. Teacher drafts and resource
 selection/removal/refresh are implemented with bounded structural validation;
-see [draft contracts and evidence](teacher-drafts.md). Resource seeding,
-approved-library browsing/copying and AI remain pending. Backend submission
+see [draft contracts and evidence](teacher-drafts.md). Backend approved-library
+browsing/copying and durable recovery are implemented; see [library contracts](approved-library.md).
+The additive copy migration is not applied to the development database. Resource
+seeding, library frontend and AI remain pending. Backend submission
 completeness, immutable submissions, administrator review, requested-change drafts,
 resubmission and authorized history/queue reads are implemented; see the
 [workflow API and frontend handoff](lesson-review.md). Its frontend remains pending.

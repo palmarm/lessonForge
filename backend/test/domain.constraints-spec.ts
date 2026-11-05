@@ -177,11 +177,16 @@ afterAll(async () => {
   if (db) await db.$disconnect();
 });
 
-it('applies the tracked migration and inserts valid relations through the generated client', async () => {
-  const migrations = await client().$queryRaw<{ count: bigint }[]>`
-    SELECT count(*) AS count FROM "_prisma_migrations" WHERE finished_at IS NOT NULL
+it('applies the tracked migrations and inserts valid relations through the generated client', async () => {
+  const migrations = await client().$queryRaw<{ name: string }[]>`
+    SELECT migration_name AS name FROM "_prisma_migrations"
+    WHERE finished_at IS NOT NULL ORDER BY migration_name
   `;
-  expect(migrations[0].count).toBe(2n);
+  expect(migrations.map((row) => row.name)).toEqual([
+    '20261008000000_initial_domain',
+    '20261009000000_add_sessions',
+    '20261105000000_durable_lesson_copies',
+  ]);
   const lesson = await client().lesson.findUniqueOrThrow({
     where: { id: ids.lesson },
     include: { currentRevision: { include: { sources: true, review: true } } },

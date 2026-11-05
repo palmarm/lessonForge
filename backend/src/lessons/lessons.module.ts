@@ -5,6 +5,11 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { LessonsService } from './lessons.service.js';
 import { LessonsController } from './lessons.controller.js';
 import { LessonWorkflowService } from './lesson-workflow.service.js';
+import { LibraryService } from './library.service.js';
+import {
+  LibraryController,
+  LessonCopyController,
+} from './library.controller.js';
 import {
   LessonWorkflowController,
   PendingReviewsController,
@@ -16,8 +21,16 @@ import {
     LessonsController,
     LessonWorkflowController,
     PendingReviewsController,
+    LibraryController,
+    LessonCopyController,
   ],
   providers: [
+    {
+      provide: LibraryService,
+      inject: [PrismaService],
+      useFactory: (db: PrismaService) =>
+        new LibraryService(db.client as PrismaClient),
+    },
     {
       provide: LessonWorkflowService,
       inject: [PrismaService],

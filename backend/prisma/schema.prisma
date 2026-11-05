@@ -61,6 +61,8 @@ model Lesson {
   draftGenerationOrigin GenerationOrigin?
   currentRevisionId     String?           @db.Uuid
   copiedFromRevisionId  String?           @db.Uuid
+  copyOperationKey      String?           @db.Uuid
+  copySourceVersion     Int?
   version               Int               @default(1)
   createdAt             DateTime          @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime          @updatedAt @db.Timestamptz(6)
@@ -73,6 +75,7 @@ model Lesson {
   @@index([ownerId, updatedAt])
   @@index([currentRevisionId])
   @@index([copiedFromRevisionId])
+  @@unique([ownerId, copyOperationKey])
 }
 
 model LessonRevision {
