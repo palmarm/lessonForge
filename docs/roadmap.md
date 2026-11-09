@@ -26,6 +26,54 @@ hosting evaluation, and deployment preparation may proceed alongside feature
 development; releasing the manual workflow waits for its completion and the
 staging prerequisites below. Add automated checks throughout development.
 
+## Current planning checkpoint — 2026-11-06
+
+**Next milestone: first restricted staging deployment.** Submission/review and
+Approved Library frontends are implemented and merged, as developer-confirmed
+for this reconciliation. This advances planning to milestone 4; it does not close
+unresolved manual-workflow checks or any deployment prerequisite. AI follows
+restricted staging and remains required for MVP completion.
+
+Evidence boundaries:
+
+- **Developer-run live lifecycle:** incomplete submission rejection, submission,
+  requested changes, editing, resubmission and approval passed. Historical content,
+  reviews and resource snapshots were retained; the approved lesson disappeared
+  from pending reviews and editable drafts. See the
+  [core live report](ui/lesson-review-live-acceptance.md#latest-acceptance-update--developer-performed-live-checks).
+  This does not establish uncertain-write recovery or concurrency acceptance.
+- **Developer-run development migration/startup:** the developer confirms
+  `20261105000000_durable_lesson_copies` was applied to `lessonforge_dev`, with
+  migration status, build, connectivity, API startup and prompt shutdown passing.
+  This confirmation is recorded here from the current developer report; the
+  [backend library guide](approved-library.md) retains earlier pre-application
+  evidence. It is not a staging migration/deployment rehearsal.
+- **Later UI evidence:** [Phases 1–3](ui/frontend-design-integration.md) record
+  74 intercepted-API rendered passes, 97 request/state passes and developer-reported
+  combined local acceptance, explicitly including formerly deferred Phase 1
+  navigation checks. [Workflow browser verification](ui/lesson-review-browser-verification.md)
+  later records 99 rendered passes and 20 focused passes on its correction source.
+  These are scoped prior results, not a fresh run on the merged library frontend.
+- **Library evidence:** the [library handoff](ui/approved-library.md#latest-developer-performed-manual-verification)
+  reports eight developer-performed checks passing collectively and specifically
+  confirms manual keyboard and narrow-screen checks. It supplies no per-check
+  mapping to its four integrated API/database acceptance rows; those remain
+  Pending. Do not infer additional browser, recovery or database observations.
+  Its automated evidence separately records 152 request/state passes, lint and
+  typecheck passes, an earlier production build pass, and blocked independent
+  build/rendered reruns (`--showConfig` parsing and localhost `listen EPERM`).
+- **Still unresolved:** check-specific library live browse/detail, copy, same-key
+  recovery and deliberate second-copy results; workflow uncertain-write recovery,
+  concurrency/stale-version acceptance and unconfirmed manual checklist cases;
+  full accessibility/assistive-technology, other-browser, HTTPS/security and
+  deployment verification. Manual keyboard checks do not establish full
+  accessibility. Keep these gaps explicit during staging planning.
+
+No application tests, browser checks, migration, database inspection or deployment
+were performed for this documentation reconciliation. Earlier dated session notes
+remain historical; this checkpoint and the current milestone checkboxes supersede
+their outdated next-task and blanket-pending statements.
+
 ## Milestones
 
 ### Foundation
@@ -56,7 +104,10 @@ staging prerequisites below. Add automated checks throughout development.
 - [x] Implement frontend login/logout and current-user handling.
 - [x] Verify teacher/admin browser login, refresh, logout, and incorrect-password rejection (developer confirmed 2026-10-14).
 - [x] Verify browser API-outage recovery (developer confirmed separately; see [frontend verification](frontend-authentication-verification.md#confirmed-browser-outage-recovery)).
-- [ ] Verify cookie attributes, CORS/CSRF, HTTPS, component rendering, and keyboard/screen-reader interaction; outage confirmation does not establish these checks.
+- [x] Record later automated component/rendered authentication and navigation coverage from [UI Phases 1–3](ui/frontend-design-integration.md); these use intercepted API responses.
+- [x] Record developer-reported local Phase 1 navigation acceptance within the combined UI checks; no additional unreported cases are inferred.
+- [ ] Verify remaining real cookie attributes, credentialed CORS/CSRF and HTTPS behavior; mocked rendering and outage recovery do not establish deployed security.
+- [ ] Complete full keyboard/zoom/screen-reader and other-browser acceptance beyond the specifically recorded UI checks.
 - [x] Implement checks, tests, and builds with GitHub Actions.
 - [x] Verify the first GitHub Actions run and configure required checks on staging and main.
 
@@ -71,7 +122,9 @@ Remaining verification is tracked separately from these confirmed results.
 - [x] Enforce resource permissions and runtime validation in NestJS.
 - [x] Implement teacher browsing of active curriculum resources.
 - [x] Verify unauthorized resource changes are rejected in database-free unit/HTTP tests.
-- [x] Complete the [manual teacher/administrator resource browser checklist](curriculum-resources.md#local-startup-and-manual-browser-verification) (developer-reported 2026-10-19; automated rendered and HTTPS tests remain pending).
+- [x] Complete the [manual teacher/administrator resource browser checklist](curriculum-resources.md#local-startup-and-manual-browser-verification) (developer-reported 2026-10-19; this is manual evidence).
+- [x] Record later resource rendered coverage in [UI Phases 1–3](ui/frontend-design-integration.md), including the Phase 1/2 regressions in the 74-case intercepted-API suite.
+- [ ] Verify resource behavior on the intended HTTPS deployment; prior local manual and mocked rendered checks do not establish this.
 
 Demonstration: an administrator manages resources and a teacher browses the
 available demonstration material.
@@ -85,7 +138,9 @@ available demonstration material.
 - [x] Verify conflicting content/source saves cannot silently overwrite work in database-free and disposable PostgreSQL tests.
 - [x] Implement the teacher draft editor with explicit uncertainty/conflict reconciliation and identity isolation.
 - [x] Correct creation candidate reconciliation and add observed lifecycle lock-wait coverage; clarify resource browsing versus lesson editing and saved/unsaved content (2026-10-21; see [correction evidence](teacher-drafts.md#correction-verification-2026-10-21)).
-- [ ] Complete the [teacher draft browser checklist](teacher-drafts.md#local-checks-and-browser-checklist) and automated rendered interaction coverage.
+- [x] Record automated draft rendered interaction coverage from later [UI Phase 3](ui/frontend-design-integration.md), including editor recovery, create/reopen, retained text and source-precondition regressions; 74 full-suite rendered cases passed with intercepted APIs.
+- [x] Record developer-reported combined local UI acceptance and R1/D1/D2 correction acceptance; independent correction re-verification was skipped by developer decision.
+- [ ] Close individually unconfirmed [draft browser checklist](teacher-drafts.md#local-checks-and-browser-checklist) items with explicit observations. The combined UI report does not establish every live recovery, concurrency, accessibility or security case.
 
 Draft validity is implemented; submission completeness is implemented separately in
 milestone 3. See [draft contracts](teacher-drafts.md) and
@@ -98,22 +153,32 @@ edits rejected and draft validation feedback. Submission uses the separate workf
 
 - [x] Implement backend submission completeness validation, including required fields, sources and section timings.
 - [x] Submit validated lessons and preserve immutable submitted revisions and source snapshots (backend).
-- [x] Implement administrator review of the exact submitted revision (backend API; frontend pending).
+- [x] Implement administrator review of the exact submitted revision (backend API and merged frontend).
 - [x] Request changes with feedback (backend).
 - [x] Revise and resubmit while retaining history (backend).
 - [x] Approve exact revisions for library eligibility (backend; library backend implemented separately below).
-- [x] Backend approved-library browsing, exact copying and durable teacher-scoped operation recovery; see [contracts and verification](approved-library.md). Additive migration is not applied to the development database.
-- [ ] Integrate approved-library browsing/copying frontend and verify the complete browser workflow.
+- [x] Implement and merge submission/review frontend: saved-revision submission, teacher history, administrator decisions and requested-change/resubmission handling; see [UI integration](ui/lesson-review.md).
+- [x] Verify the developer-run core live lifecycle: incomplete submission rejection, submission → requested changes → editing → resubmission → approval, retained history/reviews/snapshots and removal from pending reviews/editable drafts; see [confirmed live outcomes](ui/lesson-review-live-acceptance.md).
+- [x] Implement backend approved-library browsing, exact copying and durable teacher-scoped operation recovery; see [contracts and automated evidence](approved-library.md).
+- [x] Apply the durable-copy migration to `lessonforge_dev`; developer confirms migration status, build, connectivity, API startup and prompt shutdown passed. Staging migration verification remains separate.
+- [x] Implement and merge Approved Library frontend: role-specific browsing/exact detail, teacher copying, retained-key recovery and current-destination reconciliation; see [handoff](ui/approved-library.md).
+- [x] Record library developer-confirmed manual keyboard and narrow-screen checks and eight reported manual passes collectively, without inferring an individual scenario breakdown.
+- [ ] Complete the four individually Pending [library live API/database checks](ui/approved-library.md#live-acceptance--independently-tracked): browse/exact detail, destination draft, same-key uncertain-copy recovery and deliberate new-key distinct copy.
+- [ ] Complete the library automated rendered rerun; independent execution was blocked by localhost `listen EPERM`, not an observed interaction failure. Prior independent build reruns were blocked by TypeScript `--showConfig` parsing.
 - [x] Verify conflicting edits and review decisions are handled safely in backend tests; see [workflow evidence](lesson-review.md#verification).
-- [ ] Verify the complete manual workflow, including permissions and failure cases.
+- [ ] Verify remaining live workflow permission/failure cases, including outage/uncertain-write recovery, concurrency/stale-version handling, unsaved-edit/version targeting and unconfirmed checklist cases. Core lifecycle success and backend concurrency tests do not close these browser checks.
+- [ ] Complete remaining accessibility/assistive-technology, other-browser and HTTPS acceptance; retain the distinction between manual checks, mocked rendering and real API/database results.
 
-Demonstration: complete submission, feedback, resubmission, approval, browsing,
-and copying without AI. Only an administrator can approve for the library.
+Demonstration target: complete submission, feedback, resubmission, approval,
+browsing and copying without AI. The core live lifecycle is developer-confirmed;
+check-specific library and failure-path gaps above remain open. Only an
+administrator can approve for the library.
 
 ### 4. First restricted staging deployment
 
-Preparation can proceed alongside milestones 1–3. All prerequisites below remain
-pending and must be verified before restricted staging access is opened:
+This is the next milestone. Carry forward the unresolved milestone 1–3 checks
+above while planning deployment. All prerequisites below remain pending and must
+be verified before restricted staging access is opened:
 
 - [ ] Containerize the applications and choose hosting and an access restriction for designated testers.
 - [ ] Configure HTTPS and same-site frontend/API origins; verify Secure host-only cookies,
@@ -166,14 +231,11 @@ then obtain administrator review. AI is required for the full MVP acceptance cri
 
 ## Session notes
 
-The earlier next-task notes below are historical. Curriculum resource management
-and browsing are implemented; resource browser completion was developer-reported
-on 2026-10-19. Teacher drafts are now implemented; draft browser/rendered checks
-remain pending. Backend submission/review/resubmission is now implemented; see
-[workflow verification and frontend handoff](lesson-review.md). Workflow frontend
-and library frontend remain milestone 3 work. Backend approved browsing/copying and
-durable operation recovery are now implemented; see [library evidence](approved-library.md). Infrastructure
-preparation may proceed alongside it.
+The dated records below preserve earlier implementation and verification states.
+For current planning, use the 2026-11-06 checkpoint above: submission/review and
+Approved Library frontends are merged, the developer-confirmed core live lifecycle
+and development copy migration/startup passed, and restricted staging is next.
+Specific remaining checks stay open; AI follows staging and remains required.
 
 At the end of each session, record:
 
@@ -266,9 +328,11 @@ handling were implemented on 2026-10-14; the developer confirmed teacher/admin
 browser login, refresh, logout, and incorrect-password rejection that day. See
 [frontend verification](frontend-authentication-verification.md) for automated
 checks and the manual browser checklist. The developer separately confirmed browser
-API-outage recovery; cookie, CORS/CSRF, HTTPS, component-rendering, and accessibility
-checks remain unverified. See the separate confirmation in that guide. Staging
-prerequisites remain pending.
+API-outage recovery. Later [UI-phase evidence](ui/frontend-design-integration.md)
+adds automated rendering and developer-reported local navigation acceptance; the
+older blanket component-rendering deferral is superseded within that scope.
+Cookie/CORS/CSRF/HTTPS, full accessibility and other-browser verification remain
+open beyond recorded cases. Staging prerequisites remain pending.
 
 ## Curriculum resource management
 
@@ -279,7 +343,8 @@ workspace; conflicts and uncertain writes preserve entered text and require expl
 reconciliation. The existing schema/migrations and development database are unchanged.
 See [resource contracts and verification](curriculum-resources.md) for practical
 limits, original sample text, actual checks, live isolation, and the developer-reported
-2026-10-19 resource browser completion. Automated rendered and HTTPS checks remain pending.
+2026-10-19 resource browser completion. Later [UI-phase evidence](ui/frontend-design-integration.md)
+adds intercepted-API resource rendering coverage; HTTPS/deployment checks remain pending.
 
 ## Teacher drafts — 2026-10-19
 
@@ -290,4 +355,7 @@ Saving creates no revision. The frontend retains unsaved text through failures,
 requires explicit reconciliation/version adoption, pauses unconfirmed sessions and
 invalidates old responses. No dependencies, schema/migrations, submission, review,
 copying, AI or deletion endpoints were added. See [actual verification and local
-steps](teacher-drafts.md). Draft browser/rendered tests and HTTPS remain pending.
+steps](teacher-drafts.md). At that checkpoint draft browser/rendered tests and
+HTTPS were pending. Later [UI Phase 3](ui/frontend-design-integration.md) records
+rendered passes and developer-reported local acceptance; individually unconfirmed
+live checklist cases, full accessibility and HTTPS remain open as split above.
