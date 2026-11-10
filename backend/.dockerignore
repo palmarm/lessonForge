@@ -1,0 +1,33 @@
+# Local dependencies and generated output must be rebuilt inside Linux.
+**/node_modules
+src/generated/prisma
+**/dist
+**/out
+**/.next
+**/coverage
+**/*.tsbuildinfo
+
+# Environment files (including examples), credentials and local configuration.
+**/.env
+**/.env.*
+**/.npmrc
+**/.aws
+**/.ssh
+**/secrets
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+
+# Logs, caches and repository/editor metadata.
+**/*.log
+**/.cache
+**/.npm
+**/.turbo
+**/.eslintcache
+**/__pycache__
+**/.git
+**/.vscode
+**/.idea
+**/.DS_Store
+**/Thumbs.db
