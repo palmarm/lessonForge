@@ -1,0 +1,60 @@
+name: lessonforge-container-check
+
+services:
+  db:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_DB: lessonforge_container_check
+      POSTGRES_USER: lessonforge_container_check
+      POSTGRES_PASSWORD: ${CONTAINER_CHECK_DB_PASSWORD:?Generate a fixture-only CONTAINER_CHECK_DB_PASSWORD in .env.container-check; see docs/containerization.md}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    stop_grace_period: 30s
+
+  api:
+    image: lessonforge-backend:container-check
+    build:
+      context: ./backend
+      target: runtime
+    environment:
+      # Compiled code, with loopback-only HTTP auth configuration for this check.
+      # The image itself defaults to production and requires HTTPS configuration.
+      NODE_ENV: development
+      PORT: "3001"
+      DATABASE_URL: postgresql://lessonforge_container_check:${CONTAINER_CHECK_DB_PASSWORD:?Generate a fixture-only CONTAINER_CHECK_DB_PASSWORD in .env.container-check; see docs/containerization.md}@db:5432/lessonforge_container_check
+      API_PUBLIC_ORIGIN: http://localhost:3101
+      AUTH_ALLOWED_ORIGINS: http://localhost:3100
+      AUTH_COOKIE_MODE: local-http
+    ports:
+      - "127.0.0.1:3101:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Process HTTP smoke check only: this does not recheck the database/schema.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - --input-type=module
+        - -e
+        - >-
+          const response = await fetch('http://127.0.0.1:3001/', { signal: AbortSignal.timeout(2000) });
+          if (response.status !== 200 || await response.text() !== 'LessonForge API') process.exit(1);
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    stop_grace_period: 30s
+
+volumes:
+  postgres_data:
