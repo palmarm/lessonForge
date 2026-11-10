@@ -79,10 +79,13 @@ fragments are rejected. `PORT` is optional and defaults to `3001`.
 
 ## Docker and PostgreSQL
 
-For the separate backend image and isolated, unmigrated fixture database, use
+For standalone frontend/backend images and the isolated, unmigrated fixture
+database, use
 [local container verification](containerization.md). That procedure uses its own
 Compose project, explicit environment file, network and volume; it does not use
-the development database described below.
+the development database described below. The container UI is at
+`http://localhost:3100`, with browser API calls to `http://localhost:3101`.
+Use a separate browser profile from development: localhost cookies span ports.
 
 Validate Compose without printing interpolated credentials, then start the
 service and wait for health:

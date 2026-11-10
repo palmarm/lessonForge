@@ -1,7 +1,8 @@
-# Local backend container verification
+# Local application container verification
 
-This slice packages the NestJS backend and provides an isolated PostgreSQL fixture
-stack. It verifies container mechanics and authenticated startup connectivity only.
+This guide packages the Next.js frontend and NestJS backend alongside an isolated
+PostgreSQL fixture stack. It verifies container mechanics, backend startup
+connectivity and unauthenticated browser-to-API transport.
 The fixture database remains **unmigrated**: no application tables, accounts or
 lesson data are created. `GET /` returns a fixed process response; it is neither a
 database-readiness nor a schema-readiness endpoint. Its Compose health check does
@@ -175,10 +176,14 @@ Stop after an unexpected failure in any subsequent command.
 
 ## Build, start and inspect
 
-First build only the API image. No database service is started by this command:
+Build sequentially to limit memory use. Neither command starts any service.
+Frontend compilation runs with networking disabled; API/database access is
+unnecessary. The image build also serves as the production frontend build check;
+do not repeat an equivalent host build for this slice.
 
 ```bash
 lfcc build api
+lfcc build frontend
 docker image inspect lessonforge-backend:container-check \
   --format 'User={{.Config.User}} Command={{json .Config.Cmd}}'
 docker run --rm --network none --entrypoint node \
@@ -265,10 +270,296 @@ This is not the least-privilege runtime role required for staging.
 The image defaults to `NODE_ENV=production`. Only this local Compose API service
 overrides it to `development`, permitting the unchanged loopback HTTP cookie mode.
 It still runs compiled JavaScript, not a watcher. Origins use API port `3101` and
-reserved future UI port `3100`; no frontend is started. This override establishes
+UI port `3100`. This override establishes
 no production transport security. Production requires explicit HTTPS origins and
 Secure cookie mode. Browser cookies do not isolate ports; any later browser check
 should use a separate profile from development.
+
+## Frontend standalone image and browser transport
+
+`frontend/Dockerfile` uses **frontend/** as context and the same verified, pinned
+Node 24.21.0 Bookworm/glibc base as the API. Registry inspection on 2026-11-10
+confirmed the index digest above. `dependencies` runs
+`npm ci --include=dev --include=optional` from the frontend lockfile inside Linux.
+Do not copy the backend's optional-dependency pruning: Next's SWC, Tailwind's
+Oxide/Lightning CSS and Sharp use platform-specific optional dependencies. The
+build needs these Linux binaries; standalone tracing chooses the runtime files.
+No host `node_modules`, dependency upgrade or lockfile edit is involved.
+
+The `build` stage copies explicit configuration, `src/` and `public/`, then runs
+`npm run build` with `--network=none`. The current layout uses local styles and
+has no build-time API/database or remote-font requirement. The `runtime` stage
+copies these outputs, all owned by `node`:
+
+| Build output | Runtime location | Purpose |
+| --- | --- | --- |
+| `.next/standalone/` | `/app/` | Generated `server.js`, traced dependencies and server output |
+| `.next/static/` | `/app/.next/static/` | Generated CSS and JavaScript; not copied by standalone automatically |
+| `public/` | `/app/public/` | Public assets such as `/file.svg` |
+
+The App Router favicon is compiled from `src/app/favicon.ico` into server output;
+it is also checked over HTTP. The container runs as `node` (UID 1000) with
+`NODE_ENV=production`, `HOSTNAME=0.0.0.0`, `PORT=3000`, and exec-form
+`CMD ["node", "server.js"]`. Node receives SIGTERM directly. There is no npm wrapper,
+watcher, source mount, proxy or new authentication layer. See Next's
+[standalone documentation](https://nextjs.org/docs/app/api-reference/config/next-config-js/output).
+
+Compose explicitly passes `NEXT_PUBLIC_API_BASE_URL=http://localhost:3101` as a
+**build argument**. This is public configuration embedded in browser JavaScript,
+not a secret. Changing the browser API origin requires rebuilding the frontend;
+setting a runtime variable cannot rewrite the existing bundle. A direct build
+must likewise pass `--build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:3101`.
+Runtime `HOSTNAME` and `PORT` instead configure the standalone listener. Never pass
+database credentials, session tokens or provider keys through a frontend ARG/ENV.
+See Next's [public environment configuration](https://nextjs.org/docs/app/guides/environment-variables).
+No fixture example change is needed: its only input remains the database password.
+
+| Caller/location | Address |
+| --- | --- |
+| Browser UI | `http://localhost:3100`, published only as `127.0.0.1:3100:3000` |
+| Frontend server inside its container | `0.0.0.0:3000` |
+| Browser API requests | `http://localhost:3101`, never `http://api:3001` |
+| Compose service DNS | `api:3001` and `db:5432`, available only inside the fixture network |
+
+`localhost` in a browser refers to the browser's machine; inside a container it
+refers to that container. The existing client transport directly calls the public
+API origin with `credentials: "include"`. Nest retains its existing
+`AUTH_ALLOWED_ORIGINS=http://localhost:3100`, `API_PUBLIC_ORIGIN=http://localhost:3101`
+and explicit **API-only** `NODE_ENV=development` / `AUTH_COOKIE_MODE=local-http`
+override. Production authentication still rejects local HTTP. The frontend has no
+startup dependency on API/database. Its health check only checks the public shell,
+and the API health check remains a process check, not ongoing database readiness.
+
+After the sequential builds above, inspect and probe the final frontend image:
+
+```bash
+docker image inspect lessonforge-frontend:container-check \
+  --format 'User={{.Config.User}} Command={{json .Config.Cmd}} StopSignal={{.Config.StopSignal}}'
+docker run --rm --network none --entrypoint node lessonforge-frontend:container-check -e '
+  const assert = require("node:assert/strict");
+  const fs = require("node:fs");
+  assert.equal(process.getuid(), 1000);
+  assert.equal(process.version, "v24.21.0");
+  assert.equal(process.env.NODE_ENV, "production");
+  assert.equal(process.env.HOSTNAME, "0.0.0.0");
+  assert.equal(process.env.PORT, "3000");
+  for (const file of ["server.js", ".next/static", "public/file.svg"]) assert.ok(fs.existsSync(file));
+  assert.ok(!fs.existsSync(".env") && !fs.existsSync(".env.local"));
+  require("sharp")({create:{width:1,height:1,channels:3,background:"white"}}).png().toBuffer()
+    .then(() => console.log("Non-root standalone packaging and Sharp native runtime passed"));
+'
+```
+
+Use the ownership preflight in the build/start section before creating containers.
+To establish independent frontend startup, start it before the other services,
+then start the complete isolated stack:
+
+```bash
+lfcc up --detach --no-build --no-deps --wait --wait-timeout 90 frontend
+curl --fail --silent --show-error --output /dev/null http://localhost:3100/sign-in
+lfcc up --detach --no-build --wait --wait-timeout 90
+lfcc ps
+```
+
+### HTTP and header checks
+
+Inspect `/auth/me` before deciding whether migrations are necessary:
+`AuthenticationGuard` in `backend/src/auth/auth.guards.ts` calls the repository only
+when a session cookie token exists. **With no cookie**, it immediately returns 401
+with `Authentication required.`; no application table is needed. Keep this check
+cookie-free. A real/stale cookie could query the unmigrated database instead.
+Do not provision users or infer authenticated workflow acceptance from this check.
+
+Run from the repository root after startup. This fetches the rendered shell and
+all referenced CSS/JS, compares a public asset and favicon against source bytes,
+and checks CORS headers/preflights for allowed and rejected origins. These are
+HTTP checks, not browser evidence:
+
+```bash
+node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const ui = 'http://localhost:3100';
+const api = 'http://localhost:3101';
+const get = (url, options = {}) => fetch(url, {signal: AbortSignal.timeout(30000), ...options});
+const page = await get(`${ui}/sign-in`);
+assert.equal(page.status, 200);
+assert.match(page.headers.get('content-type'), /text\/html/);
+const html = await page.text();
+assert.match(html, /LessonForge/);
+const assets = [...new Set([...html.matchAll(/(?:src|href)="([^" ]+)"/g)].map(m => m[1]).filter(p => p.startsWith('/_next/static/') && /\.(css|js)(?:\?|$)/.test(p)))];
+assert.ok(assets.some(p => p.includes('.css')));
+assert.ok(assets.some(p => p.includes('.js')));
+for (const path of assets) {
+  const r = await get(ui + path);
+  assert.equal(r.status, 200, path);
+  assert.match(r.headers.get('content-type'), path.includes('.css') ? /text\/css/ : /javascript/);
+  assert.ok((await r.arrayBuffer()).byteLength > 0);
+}
+for (const [url, file] of [['/file.svg', 'frontend/public/file.svg'], ['/favicon.ico', 'frontend/src/app/favicon.ico']]) {
+  const r = await get(ui + url);
+  assert.equal(r.status, 200);
+  assert.deepEqual(Buffer.from(await r.arrayBuffer()), await readFile(file));
+}
+const me = await get(`${api}/auth/me`, {headers:{Origin:ui}});
+assert.equal(me.status, 401);
+assert.equal(me.headers.get('access-control-allow-origin'), ui);
+assert.equal(me.headers.get('access-control-allow-credentials'), 'true');
+assert.match(me.headers.get('vary'), /Origin/);
+assert.equal((await me.json()).message, 'Authentication required.');
+const preflight = await get(`${api}/auth/login`, {method:'OPTIONS',headers:{Origin:ui,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type,x-lessonforge-csrf'}});
+assert.equal(preflight.status, 204);
+assert.equal(preflight.headers.get('access-control-allow-origin'), ui);
+assert.equal(preflight.headers.get('access-control-allow-credentials'), 'true');
+assert.match(preflight.headers.get('access-control-allow-methods'), /POST/);
+assert.match(preflight.headers.get('access-control-allow-headers').toLowerCase(), /content-type/);
+assert.match(preflight.headers.get('access-control-allow-headers').toLowerCase(), /x-lessonforge-csrf/);
+for (const origin of ['http://localhost:3000', 'http://untrusted.invalid']) {
+  const r = await get(`${api}/auth/me`, {headers:{Origin:origin}});
+  assert.equal(r.status, 401);
+  assert.equal(r.headers.get('access-control-allow-origin'), null);
+  const p = await get(`${api}/auth/login`, {method:'OPTIONS',headers:{Origin:origin,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type,x-lessonforge-csrf'}});
+  assert.equal(p.headers.get('access-control-allow-origin'), null);
+}
+console.log(`HTTP/header checks passed: /sign-in, ${assets.length} generated CSS/JS assets, public SVG, byte-matching favicon, cookie-free /auth/me 401, credentialed CORS/preflight, denied origins`);
+JS
+```
+
+The fixture catalog query earlier must still report zero public tables.
+The allowed-origin 401 must include the exact UI origin, credentials `true` and
+`Vary: Origin`. The login OPTIONS preflight must allow POST, Content-Type and
+X-LessonForge-CSRF. The checks send no login POST and no cookies. Header checks do
+not establish cookie attributes or authenticated CSRF behavior.
+
+### Browser checks
+
+Use a **separate browser profile** from development for manual checks. Cookies
+for localhost are shared across ports, so an existing development session can
+change `/auth/me` behavior. The automated probe below creates a fresh in-memory
+browser context with no cookies and performs no login or intercepted API responses.
+It checks the real image on port 3100 against the real API on port 3101.
+
+If Playwright and Chromium are already installed, set `PLAYWRIGHT_MODULE` to the
+absolute path of that installation's `index.mjs` and configure its existing browser
+path/library environment if needed. Do not install packages or change the lockfile
+for this check. In this run the existing cached runtime needed
+`PLAYWRIGHT_BROWSERS_PATH`, `LD_LIBRARY_PATH`, `ALSA_CONFIG_DIR` and `ALSA_CONFIG_PATH`.
+Run this with those environment variables. For the cached runtime used in this
+workspace, the command prefix was:
+
+```bash
+export PLAYWRIGHT_MODULE=/home/mariga/design-work/lessonforge-ui/node_modules/playwright/index.mjs
+export PLAYWRIGHT_BROWSERS_PATH=/home/mariga/.cache/lessonforge-browser-runtime/browsers
+export LD_LIBRARY_PATH=/home/mariga/.cache/lessonforge-browser-runtime/root/usr/lib/x86_64-linux-gnu
+export ALSA_CONFIG_DIR=/home/mariga/.cache/lessonforge-browser-runtime/root/usr/share/alsa
+export ALSA_CONFIG_PATH=/home/mariga/.cache/lessonforge-browser-runtime/root/usr/share/alsa/alsa.conf
+```
+
+These paths identify already installed LessonForge verification tools, not image
+inputs or application dependencies. Adjust them for an existing installation on
+another machine. Then run:
+
+```bash
+node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE);
+const browser = await chromium.launch({headless:true});
+try {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors = [], requests = [], responses = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('console', m => { if (/hydrat|did not match|Minified React error/i.test(m.text())) errors.push(m.text()); });
+  page.on('request', r => { if (new URL(r.url()).port === '3101') requests.push({url:r.url(),method:r.method()}); });
+  page.on('response', r => { if (new URL(r.url()).port === '3101') responses.push({url:r.url(),status:r.status()}); });
+  for (const route of ['/sign-in','/drafts','/library','/admin/reviews']) {
+    const me = page.waitForResponse(r => r.url() === 'http://localhost:3101/auth/me');
+    await page.goto(`http://localhost:3100${route}`);
+    assert.equal((await me).status(), 401);
+    await page.getByLabel('Email', {exact:true}).waitFor();
+    await page.getByLabel('Password', {exact:true}).waitFor();
+    await page.getByRole('button', {name:'Sign in',exact:true}).waitFor();
+    assert.equal(await page.getByRole('navigation', {name:/Teacher|Administrator/}).count(), 0);
+    assert.equal(await page.getByLabel('Title', {exact:true}).count(), 0);
+    // Exercise hydrated React state without making a login request.
+    await page.getByLabel('Password', {exact:true}).fill('synthetic-ui-only');
+    await page.getByRole('button', {name:'Show password',exact:true}).click();
+    assert.equal(await page.getByLabel('Password', {exact:true}).getAttribute('type'), 'text');
+    assert.ok(await page.locator('link[rel="stylesheet"]').count() > 0);
+    assert.ok(await page.getByRole('heading', {name:'Sign in',exact:true}).evaluate(e => parseFloat(getComputedStyle(e).fontSize)) > 20);
+  }
+  const result = await page.evaluate(async () => {
+    const r = await fetch('http://localhost:3101/auth/me', {credentials:'include'});
+    return {status:r.status,body:await r.json()};
+  });
+  assert.equal(result.status, 401);
+  assert.equal(result.body.message, 'Authentication required.');
+  assert.ok(requests.every(r => r.url === 'http://localhost:3101/auth/me' && r.method === 'GET'));
+  assert.deepEqual(errors, []);
+  console.log(JSON.stringify({browser:browser.version(),routes:4,requests,responses,hydrationErrors:errors,credentialedBrowserRead:result.status},null,2));
+  await context.close();
+} finally { await browser.close(); }
+JS
+```
+
+Expected: actual GETs to `http://localhost:3101/auth/me` return 401, the sign-in form
+becomes interactive, Show password updates React state, CSS applies, protected
+routes show sign-in and no authenticated workspace controls, and there are no
+page errors or hydration warnings. A public route heading may still render;
+backend authentication remains the authorization boundary. A credentialed browser
+fetch must expose the 401 body, establishing that CORS permits the browser read.
+
+If browser execution is blocked, leave these checks pending and manually:
+
+1. Open `http://localhost:3100/sign-in` in a separate profile and check styled UI,
+   favicon, loaded CSS/JS, and the console for hydration errors.
+2. Confirm Network shows GET `http://localhost:3101/auth/me` with 401 and a usable
+   response; confirm sign-in fields and Show password work without signing in.
+3. Open `/drafts`, `/library` and `/admin/reviews`; confirm sign-in is shown and
+   authenticated workspace controls/content remain unavailable.
+
+### Frontend SIGTERM and checks
+
+The frontend grace period is **30 seconds**. After HTTP/browser checks, measure
+idle shutdown and require exit 0 or 143, no OOM/runtime error, and no SIGKILL:
+
+```bash
+lfcc_frontend_id=$(lfcc ps --quiet frontend)
+test -n "$lfcc_frontend_id"
+lfcc_frontend_signal_since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+lfcc_frontend_stop_started=$(date +%s)
+lfcc stop frontend
+lfcc_frontend_stop_elapsed=$(( $(date +%s) - lfcc_frontend_stop_started ))
+printf 'Frontend stop took %s seconds\n' "$lfcc_frontend_stop_elapsed"
+docker inspect "$lfcc_frontend_id" \
+  --format 'Exit={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Error={{.State.Error}}'
+test "$lfcc_frontend_stop_elapsed" -lt 30
+lfcc_frontend_exit=$(docker inspect "$lfcc_frontend_id" --format '{{.State.ExitCode}}')
+test "$lfcc_frontend_exit" -eq 0 || test "$lfcc_frontend_exit" -eq 143
+docker events --since "$lfcc_frontend_signal_since" --until "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --filter "container=$lfcc_frontend_id" --filter event=kill --format '{{json .Actor.Attributes}}'
+```
+
+Run the API shutdown check below and `lfcc down --timeout 30` only for containers
+created by this task. Keep the fixture file and volume. Never use `--volumes`,
+global pruning or development Compose cleanup. Idle shutdown does not establish
+in-flight request draining or performance under load.
+
+Run the existing frontend checks sequentially:
+
+```bash
+npm run lint --prefix frontend
+npm run typecheck --prefix frontend
+npm test --prefix frontend
+git diff --check -- frontend/Dockerfile frontend/.dockerignore frontend/next.config.ts \
+  compose.container-check.yaml .env.container-check.example docs/containerization.md docs/development-setup.md
+git diff --check
+```
+
+The offline container production build already covers `npm run build`; a second
+host build is unnecessary. The existing rendered suite uses intercepted API
+fixtures and a separate host build/configuration; it does not substitute for the
+real unauthenticated container browser check above.
 
 ## Safe startup failures
 
@@ -455,6 +746,57 @@ secret detector. Review the Dockerfile's explicit inputs and absence of credenti
 ARG/ENV instructions as well. Keep the temporary audit directory for inspection;
 no global or automatic volume cleanup is part of this procedure.
 
+### Frontend synthetic audit
+
+The frontend has its own `.dockerignore`; a backend audit does not verify it.
+It excludes environment files (including examples), host dependencies/builds,
+logs, coverage, caches and common credential locations. Explicit builder copies
+and standalone-only runtime copies provide additional boundaries.
+
+Create a separate export, copy the frontend files under review, and place only
+synthetic markers into it. No real environment file is read or modified:
+
+```bash
+lfcc_frontend_audit=$(mktemp -d /tmp/lessonforge-frontend-audit.XXXXXX)
+git archive HEAD frontend | tar -x -C "$lfcc_frontend_audit"
+cp frontend/Dockerfile frontend/.dockerignore frontend/next.config.ts "$lfcc_frontend_audit/frontend/"
+python3 - "$lfcc_frontend_audit/frontend" <<'PYTHON'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+for name in (
+    '.env', '.env.local', 'nested/.env.audit', '.npmrc', '.netrc',
+    '.git-credentials', '.aws/credentials', '.ssh/id_rsa', '.docker/config.json',
+    '.vercel/auth.json', 'secrets/audit', 'credentials/audit',
+    'audit.pem', 'audit.key', 'audit.p12', 'audit.pfx', 'audit.log',
+    '.cache/audit', '.npm/audit', '.turbo/audit', '.yarn/audit', '.eslintcache',
+    'node_modules/audit', '.next/audit', 'out/audit', 'dist/audit',
+    'coverage/audit', 'audit.tsbuildinfo',
+):
+    path = root / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('LESSONFORGE_SYNTHETIC_FRONTEND_EXCLUSION_MARKER\n')
+PYTHON
+docker build --file - --output "type=local,dest=$lfcc_frontend_audit/context" \
+  "$lfcc_frontend_audit/frontend" <<'DOCKERFILE'
+FROM scratch
+COPY . /
+DOCKERFILE
+docker build --tag lessonforge-frontend:container-audit \
+  --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:3101 "$lfcc_frontend_audit/frontend"
+docker image save --output "$lfcc_frontend_audit/image.tar" lessonforge-frontend:container-audit
+```
+
+The marked-image build can reuse the previously completed build layers; excluded
+markers do not change their inputs. Run the Python scanner from the backend audit
+above again with these two substitutions: pass `"$lfcc_frontend_audit"` as its
+argument, and set `marker = b'LESSONFORGE_SYNTHETIC_FRONTEND_EXCLUSION_MARKER'`.
+It must inspect the effective context, image configuration and **all** final-image
+layers, including files deleted in later layers. This demonstrates exclusion of
+these synthetic samples, not a general secret audit. Keep the temporary export
+for review. It represents this slice's unchanged committed frontend application
+source plus its Docker/configuration edits; revisit the export if source changes.
+
 ## Verification record — 2026-11-09
 
 - Exact Debian Node tag availability and multi-platform digest: verified through
@@ -543,7 +885,7 @@ safeguards are unchanged; no application test suite was rerun for this packaging
 correction. Formatting, documented command syntax, local links and whitespace were
 checked after the documentation update.
 
-## Final review — 2026-11-10
+## Backend final review — 2026-11-10 (historical scope)
 
 ### Audit triage, highest severity first
 
@@ -600,3 +942,151 @@ dependency/application PR before staging. Do not describe pruning or the smoke
 checks as a clean security audit. Reconfirm the exact npm JSON mapping when registry
 access is available; no `npm audit fix`, dependency installation, repository lockfile
 edit, application edit or Git mutation was performed for this review.
+
+## Frontend slice verification — 2026-11-10
+
+Implemented on `feat/frontend-containerization`. Preflight found only an existing
+uncommitted `backend/Dockerfile` comment/whitespace edit; it was preserved. The
+fixture password file and named volume from the earlier backend checks were reused,
+without reading development environment files. No containers were present before
+this task started. Commands used the explicit `lfcc` project/file/environment
+selection described above; the verification scripts are reproduced in this guide.
+Temporary evidence/source exports are under `/tmp/lessonforge-frontend-check/`.
+
+| Check | Actual result |
+| --- | --- |
+| Docker/base | Client/Engine 29.8.2, Compose v5.6.0 accessible with permission outside the sandbox. Registry inspection reconfirmed Node 24.21.0 and its pinned multi-platform digest. Executed Linux/amd64 only. |
+| Sequential builds | API succeeded using existing verified build layers, then frontend locked Linux installation and production build succeeded. Frontend compilation ran with `--network=none`, with no API/database running; all routes compiled/generated. No duplicate host production build. |
+| Runtime/native dependencies | Image user `node`, UID 1000, Node v24.21.0, production environment, 0.0.0.0:3000 and direct Node command verified. Standalone server/static/public paths and absence of root environment files checked. A Sharp create/PNG encode succeeded without networking; successful build also exercised the Linux build dependencies. |
+| Independent startup | Frontend alone became healthy and served `/sign-in` before API/database startup. Frontend logs included the standalone ready/listener output. |
+| Isolated stack | All three services became healthy. UI/API bound only to 127.0.0.1 ports 3100/3101, database unpublished, all attached only to the fixture network, database using the retained fixture volume. Read-only fixture identity/catalog query returned `lessonforge_container_check` database/role and **0 public tables**. No migration, provisioning or development database access. |
+| HTTP/assets | `/sign-in` returned HTML 200; all **8** referenced generated CSS/JS files returned 200 with appropriate content types and nonempty bodies. `/file.svg` and `/favicon.ico` returned 200 with source-matching bytes. |
+| Unauthenticated API/CORS | Cookie-free `/auth/me` returned 401 and `Authentication required.`. Allowed UI origin received exact allow-origin, credentials true and Vary: Origin. Login OPTIONS returned 204 allowing POST, Content-Type and X-LessonForge-CSRF. Development UI port 3000 and an untrusted origin received no allow-origin on reads/preflights. These are HTTP/header observations. |
+| Real browser | Existing Playwright/Chromium **156.0.8078.4**, headless with fresh context and no response interception: `/sign-in`, `/drafts`, `/library`, `/admin/reviews` rendered sign-in with no authenticated navigation/editor controls. Show password state changes and computed CSS verified hydration/interactivity. **5 actual GETs** to `http://localhost:3101/auth/me` returned 401, including an explicit `credentials: "include"` fetch whose body JavaScript could read. No page errors or hydration warnings observed. No login POST or account creation. |
+| Sandbox/timeouts | Initial host network check failed with sandbox `EPERM`; permitted execution succeeded. The first permitted multi-request HTTP probe hit its 10-second timeout; targeted UI/API checks then succeeded. The complete HTTP/browser probe passed with a 30-second diagnostic deadline. This is no performance guarantee. Windows-host browser forwarding was not checked. |
+| Synthetic audit | **28** synthetic samples absent from Docker's effective frontend context, saved image configuration and **all 9 final-image layers**. Audit build reused verified compilation/install layers. No real secret values were used in the audit. |
+| Frontend SIGTERM | **6.015 seconds** measured with a monotonic timer around Compose stop, exit **143**, no OOM/runtime error; Docker events recorded signal **15**, no signal 9. Within the documented **30-second** grace period. Idle check only. |
+| API shutdown/cleanup | API stopped in **2.444 seconds**, exit 0, no OOM/runtime error, signal 15 only. Removed only task-created fixture containers/network. Confirmed no project containers remained; fixture volume and ignored configuration retained. |
+| Frontend checks | ESLint passed, `next typegen && tsc --noEmit` passed, **152/152** existing request/state tests passed. Production image build passed. Existing intercepted-API rendered suite was not rerun; real unauthenticated container browser evidence is above. |
+| Diff/documentation | Scoped `git diff --check` passed. Full `git diff --check` reports only the two pre-existing trailing spaces in `backend/Dockerfile` (lines 22 and 27); left untouched. Documented Bash/JS/Python syntax and local file links checked. No dependency manifest/lockfile or Git staging/branch mutation. |
+
+The frontend full **builder** install reported **9 npm findings: 7 moderate,
+1 high, 1 critical**, plus an ESLint deprecation and an unapproved optional tooling
+postinstall notice for `unrs-resolver`. The build succeeded. These counts are not a
+runtime-image audit; the final review below separates package presence from
+advisory applicability. No automatic remediation, dependency upgrade or lockfile
+change was performed. Carry forward
+the backend runtime/build audit triage and sanitized operational logging follow-ups
+in the historical backend review above. The API still produced no success logs in
+this run; frontend logs do not close backend observability work.
+
+These results establish local packaging and unauthenticated transport only.
+Authenticated workflows, real session-cookie attributes, authenticated CSRF,
+application-table access, other browsers, full accessibility, Windows browser
+forwarding, shutdown under load, deployed HTTPS/security and staging readiness
+remain unverified by this slice. The fixture stays unmigrated and unsuitable for
+workflow acceptance. No hosting, CI expansion, AI, migration, provisioning or
+production authentication change is included. No commit, push, merge, branch
+switch or deployment was performed.
+
+## Frontend final review — 2026-11-10
+
+### Scope and backend independence
+
+The pre-existing `backend/Dockerfile` diff relative to HEAD adds five comments:
+system-library installation, Node dependency installation/building, source/config
+copying, dependency removal, and the final runtime stage. It also adds one trailing
+space to each of the existing sequential-pruning and Argon2 comments (current lines
+22 and 27). This is **comments and whitespace**, not whitespace alone, but contains
+**no functional change**: all non-comment Dockerfile instructions match HEAD.
+The frontend verification's API build used this working-tree Dockerfile, reusing
+verified layers. The frontend image/build and its independent startup do not depend
+on these edits; the API behavior is identical with HEAD's Dockerfile. The backend
+diff was inspected only, not reverted, formatted or included in the frontend scope.
+
+### Dependency triage and evidence limits
+
+An isolated copy of the frontend manifest/lockfile was used for `npm audit
+--package-lock-only --json`, with empty user/global npm configuration, a temporary
+cache, the public registry, no retries and a 15-second fetch timeout. It failed with
+registry DNS **`EAI_AGAIN`**, not a completed security report. Fresh registry
+confirmation, exact historical npm metavulnerability keys and `fixAvailable`
+values are **unavailable**. The original nine-finding aggregate is retained; it is
+not nine independent advisories. The following is a **lockfile/public-advisory
+reconstruction**, not recovered builder audit JSON. The seven moderate candidate
+keys account for the Minimatch lint-tool cascade; their exact npm attribution
+(including whether an outer ancestor is counted instead) remains unconfirmed.
+
+Presence was inspected without Docker execution using the retained
+`/tmp/lessonforge-frontend-check/audit/image.tar`: all nine runtime layers, 256
+package manifests including base tooling (70 under `/app`). No whiteouts were
+present. The saved audit input's Dockerfile, Next configuration and lockfile match
+the reviewed files; the earlier audit reused the verified build layers. This is
+evidence from that saved Linux/amd64 audit image, not a fresh scan of every tag,
+platform, OS library or vendored dependency. Review artifacts, inventory and failed
+audit output are retained in `/tmp/lessonforge-frontend-review/`.
+
+| Severity / package | Locked dependency path and advisory | Standalone application / exposure | Fix and compatibility |
+| --- | --- | --- | --- |
+| **Critical — `next@16.3.8`** | `frontend -> next`. [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr) (`use cache` typed-array RCE); [GHSA-2464-fhr4-w9xw / CVE-2026-96889](https://github.com/advisories/GHSA-2464-fhr4-w9xw) (glibc SVG/image RCE); also **high** [GHSA-p3m5-59mp-jv5r / CVE-2026-94482](https://github.com/advisories/GHSA-p3m5-59mp-jv5r) (Server Actions CPU DoS). One package can aggregate several severities. | **Present at runtime**, not build-only. No `use cache`, Cache Components configuration or Server Actions were found in this app, so those stated prerequisites are not enabled. The glibc image retains `sharp@0.35.5` and its Linux/libvips packages: it already meets the SVG RCE advisory's explicit Sharp workaround. This is not a general Next.js security clearance or an exploit test. | Those October advisories name `16.4.1` as fixed, but the later November release requires **`16.4.5`** for the issues below. Updating the exact Next pin is a reviewed **minor**, not major, upgrade; coordinate the exact `eslint-config-next` pin, rebuild and regression-test routing, hydration, assets and transport. Merely refreshing Sharp or setting runtime environment variables does not patch Next's bundled RSC code. |
+| **High — `zod@4.6.5`** | `frontend -> eslint-config-next@16.3.8 -> eslint-plugin-react-hooks@7.1.1 -> zod`. [GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5): excessive validation work/issue allocation for oversized collections. | The **locked 4.6.5 package is absent** from `/app/node_modules/zod`; it is lint/build-environment tooling, not the application's API validation layer. **Caveat:** Next retains a separate, unversioned `next/dist/compiled/zod` bundle. Its exact version and advisory applicability are unresolved; do not claim that all Zod code is absent or that a top-level lock refresh fixes this vendored copy. | `zod >=4.6.6` fixes the published range. A 4.x patch fits the hooks plugin's `^3.25.0 || ^4.0.0` range and needs lint/tooling regression checks, not a forced Zod major migration here. Vendored code requires separate framework provenance/remediation review. |
+| **Moderate — `minimatch@10.2.6`** | `frontend -> eslint-config-next -> typescript-eslint@8.71.0 -> @typescript-eslint/typescript-estree@8.71.0 -> minimatch` (nested under typescript-estree). [GHSA-g3hv-75wg-m249 / CVE-2026-118764](https://github.com/advisories/GHSA-g3hv-75wg-m249): pattern amplification with `optimizationLevel >= 2`; current reviewed range `>=7.0.0 <11.0.1`. | The app's **10.2.6 copy is absent**, but see the base-image **10.2.5** copy below. Build/lint applicability requires attacker-controlled patterns and the specified optimization mode. The inspected typescript-estree call passes only `{ dot: true }`, leaving default optimization level 1. This is a scoped applicability observation, not a blanket build-tool exemption. | Fixed in `11.0.1`; outside typescript-estree's `^10.2.2` range. A routine lock refresh cannot cross that major boundary. Prefer compatible upstream tooling updates; any targeted override needs explicit API/Node-engine and lint/typecheck testing. Do not globally replace the unrelated CommonJS `minimatch@3.1.5` consumers with 11.x. |
+| **Moderate candidate — `@typescript-eslint/typescript-estree@8.71.0`** | `frontend -> eslint-config-next -> typescript-eslint -> typescript-estree -> minimatch`; inherited GHSA-g3hv-75wg-m249, not a new advisory. | **Absent** from runtime; same build/lint conditions as above. | Requires a compatible parent/tooling release or deliberately tested override of its Minimatch dependency; no verified current npm fix suggestion available. |
+| **Moderate candidate — `@typescript-eslint/parser@8.71.0`** | `frontend -> eslint-config-next -> typescript-eslint -> parser -> typescript-estree -> minimatch`; same inherited advisory. | **Absent** from runtime; same build/lint conditions. | Same coordinated tooling remedy, respecting the family's exact internal version dependencies. |
+| **Moderate candidate — `@typescript-eslint/type-utils@8.71.0`** | `frontend -> eslint-config-next -> typescript-eslint -> eslint-plugin -> type-utils -> typescript-estree -> minimatch`; same inherited advisory. | **Absent** from runtime; same build/lint conditions. | Same coordinated tooling remedy. |
+| **Moderate candidate — `@typescript-eslint/utils@8.71.0`** | `frontend -> eslint-config-next -> typescript-eslint -> utils -> typescript-estree -> minimatch`; same inherited advisory. | **Absent** from runtime; same build/lint conditions. | Same coordinated tooling remedy. |
+| **Moderate candidate — `@typescript-eslint/eslint-plugin@8.71.0`** | `frontend -> eslint-config-next -> typescript-eslint -> eslint-plugin -> type-utils/utils -> typescript-estree -> minimatch` (also a parser peer path); same inherited advisory. | **Absent** from runtime; same build/lint conditions. | Same coordinated tooling remedy. |
+| **Moderate candidate — `typescript-eslint@8.71.0`** | `frontend -> eslint-config-next -> typescript-eslint -> typescript-estree -> minimatch`; same inherited advisory. | **Absent** from runtime; same build/lint conditions. | Same coordinated tooling remedy; do not assume a Next framework update alone removes this cascade. |
+
+The base image retains **`npm@11.19.0 -> minimatch@10.2.5`**, also through
+`npm -> glob@13.0.6 -> minimatch`. It falls inside GHSA-g3hv-75wg-m249's affected
+range and is physically present at
+`/usr/local/lib/node_modules/npm/node_modules/minimatch`. This is **runtime-image
+tooling exposure**, distinct from an HTTP application dependency: the direct
+`node server.js` command does not invoke npm/glob. Running that CLI later with
+untrusted patterns can change applicability. Consider a reviewed base-image/npm
+update or runtime tooling removal separately; the frontend lockfile cannot patch
+this base-image copy. No base change or CLI exploit was performed.
+
+Public vendor evidence also identifies the **November 3 Next.js advisories**.
+These belong to the same Next package, not extra npm package-count findings:
+
+| Advisory (moderate in the linked vendor advisory) | Presence/applicability and fix |
+| --- | --- |
+| [GHSA-mfr8-8qww-v76h](https://github.com/vercel/next.js/security/advisories/GHSA-mfr8-8qww-v76h), [GHSA-vc7v-qv4w-wrv8](https://github.com/vercel/next.js/security/advisories/GHSA-vc7v-qv4w-wrv8), [GHSA-rhh4-g77r-r9qj](https://github.com/vercel/next.js/security/advisories/GHSA-rhh4-g77r-r9qj) | `next@16.3.8` is in their ranges. Cache/root-param/binary-argument disclosure or poisoning requires `use cache` features absent from this source/configuration. Fixed in `16.4.5`. The release blog labels the first issue high, whereas its vendor advisory labels it moderate; preserve that source distinction. |
+| [GHSA-pc58-hwjq-p385 / CVE-2026-119348](https://github.com/vercel/next.js/security/advisories/GHSA-pc58-hwjq-p385) | Affected Next version present; requires forwarding fetched responses unchanged plus a pipelining HTTP/1.1 reverse proxy. This slice has no route handlers/proxy or server-side API forwarding. Fixed in `16.4.5`. |
+| [GHSA-f3mh-rxg3-f5g2](https://github.com/vercel/next.js/security/advisories/GHSA-f3mh-rxg3-f5g2) | Affected Next version present; requires sensitive cookies set with NextResponse on Edge routes. This app has no such routes; Nest owns session cookies. Fixed in `16.4.5`. This does not verify real authenticated cookie security. |
+| [GHSA-7qx7-33qx-rqx2](https://github.com/vercel/next.js/security/advisories/GHSA-7qx7-33qx-rqx2) | **Runtime code/version present**: `/_next/image` SVG-rejection bypass requires attacker-supplied image bytes from an allowed source. No remote image patterns, upload capability or `next/image` use was found; that limits identified inputs but does not prove the optimizer endpoint unreachable. **Applicability remains conditional/unverified**, even with the separate SVG RCE workaround satisfied. Fixed in `16.4.5`. |
+| [GHSA-vvgp-ww4w-46vf](https://github.com/vercel/next.js/security/advisories/GHSA-vvgp-ww4w-46vf) | Range starts at `16.4.0`, so **16.3.8 is outside it**. Relevant when selecting an upgrade: fixed in `16.4.5`, not merely `16.4.1`. |
+
+See the [vendor's November security release](https://nextjs.org/blog/november-2026-security-release).
+The old local npm cache also contains the braces stack-exhaustion advisory
+[GHSA-vfj7-8cjw-p6xm / CVE-2026-93687](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
+and inherited `micromatch`/`fast-glob`/Next ESLint findings. The public advisory was
+**withdrawn on October 23** as not practically exploitable; do not substitute those
+stale high-severity cache entries for the recorded current nine. No audit
+suppression, automatic fix, installation, package upgrade or lockfile edit was made.
+
+### Shutdown confirmation and recommendation
+
+The existing `shutdown-results.json` and its `stop-check.py` record frontend stop
+time **6.015 seconds**, exit **143** (`128 + SIGTERM`), `oomKilled: false`, empty
+runtime error and signals **[15]**, with no signal 9. This supports idle termination
+within the 30-second grace period **without forced SIGKILL or OOM**, not exit 0 or
+in-flight request draining. Evidence was sufficient; shutdown was not rerun.
+
+**No newly introduced frontend packaging commit blocker was identified.** The
+dependency baseline is unchanged and is not a clean security audit: prioritize the
+Next update and resolve the conditional/vendored/base-tooling boundaries before
+staging. The local loopback containerization slice is not deployment approval.
+Authenticated workflows, HTTPS/cookie/CSRF security, readiness, useful backend logs
+and all previously open staging gaps remain open. Passed build, browser, native,
+lint, typecheck, test and container checks were not repeated for this final review.
+
+The exact frontend commit scope is **`frontend/Dockerfile`,
+`frontend/.dockerignore`, `frontend/next.config.ts`, `compose.container-check.yaml`,
+`docs/containerization.md`, and `docs/development-setup.md`**. Exclude the
+pre-existing `backend/Dockerfile` diff. `.env.container-check.example`, manifests,
+lockfiles, development infrastructure and application source are unchanged. Only
+this guide was edited during the final review; no staging, commit, push, merge,
+branch switch, deployment or development-resource mutation was performed.
